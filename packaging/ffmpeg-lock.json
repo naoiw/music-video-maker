@@ -10,5 +10,7 @@
   "configuration": null,
   "sourceArchiveSha256": null,
   "noticesSha256": null,
-  "review": null
+  "review": null,
+  "sourceArchiveUrl": null,
+  "noticesUrl": null
 }

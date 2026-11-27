@@ -1,0 +1,134 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: ${{ !github.event.deleted }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Verify tag belongs to main
+        run: |
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Release tag must point to a commit on main.' }
+      - name: Verify approval and download pinned inputs
+        run: node scripts/release-inputs.mjs $env:RELEASE_TAG (Join-Path $env:RUNNER_TEMP 'mvm-release-inputs')
+      - name: Install frontend dependencies
+        run: |
+          if (Test-Path package-lock.json) {
+            npm ci --no-audit --no-fund
+          } else {
+            npm install --no-audit --no-fund
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Frontend build and tests
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Rust format, lint and tests
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build desktop executable
+        run: npm run desktop:build
+      - name: Package approved Windows distribution
+        run: |
+          $inputs = Join-Path $env:RUNNER_TEMP 'mvm-release-inputs'
+          $output = Join-Path $env:RUNNER_TEMP 'mvm-release-output'
+          New-Item -ItemType Directory -Path $output -ErrorAction Stop | Out-Null
+          $zip = Join-Path $output "music-video-maker-$env:RELEASE_TAG-windows-x64.zip"
+          npm run package:windows -- (Join-Path $inputs 'ffmpeg.zip') (Join-Path $inputs 'corresponding-source.zip') (Join-Path $inputs 'third-party-notices.txt') $zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $unpacked = Join-Path $env:RUNNER_TEMP 'mvm-release-verify'
+          New-Item -ItemType Directory -Path $unpacked -ErrorAction Stop | Out-Null
+          tar.exe -xf $zip -C $unpacked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bundled = Join-Path $unpacked 'Music Video Maker'
+          foreach ($name in @('music-video-maker.exe','ffmpeg.exe','ffprobe.exe','LICENSE','README.txt','third-party/FFmpeg-LICENSE.txt','third-party/THIRD-PARTY-NOTICES.txt','third-party/corresponding-source.zip','third-party/ffmpeg-lock.json')) {
+            if (-not (Test-Path (Join-Path $bundled $name) -PathType Leaf)) { throw "Missing package file: $name" }
+          }
+          $env:Path = "$bundled;$env:Path"
+          foreach ($name in @('ffmpeg.exe', 'ffprobe.exe')) {
+            if ((Get-Command $name -CommandType Application | Select-Object -First 1).Source -ne (Join-Path $bundled $name)) { throw "Unexpected tool path: $name" }
+          }
+          cargo test --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path (Join-Path $output 'SHA256SUMS.txt') -Value "$hash  $(Split-Path $zip -Leaf)" -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: ${{ runner.temp }}/mvm-release-output/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      EXPECTED_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: distribution
+      - name: Verify artifacts and publish release
+        shell: bash
+        working-directory: distribution
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          zip="music-video-maker-${RELEASE_TAG}-windows-x64.zip"
+          test -f "$zip" && test -f SHA256SUMS.txt
+          read -r hash filename < <(tr -d '\r' < SHA256SUMS.txt)
+          [[ "$hash" =~ ^[a-f0-9]{64}$ && "$filename" == "$zip" ]]
+          # PowerShell may emit CRLF; verify using a normalized checksum line.
+          printf '%s  %s\n' "$hash" "$zip" | sha256sum --check --strict
+          # Resolve lightweight or annotated tags to their commit.
+          actual=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)
+          [[ "$actual" == "$EXPECTED_SHA" ]]
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists. Refusing to overwrite it.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --generate-notes
+          gh release upload "$RELEASE_TAG" "$zip" SHA256SUMS.txt
+          gh release edit "$RELEASE_TAG" --draft=false
