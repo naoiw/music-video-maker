@@ -108,13 +108,13 @@ export function initializeSettingsPersistence(
       persist();
     }
   });
-  function refreshAndPersist(): void {
+  const refreshAndPersist = (): void => {
     refreshFilters();
     // Existing preview/export listeners invalidate cached audio and update the output.
     // Do not dispatch individual checkbox changes (they would auto-enable the limiter).
     filterPanel.dispatchEvent(new Event("input", { bubbles: true }));
     persist();
-  }
+  };
   reset.addEventListener("click", () => {
     if (reset.disabled) return;
     apply(defaultSettings());
