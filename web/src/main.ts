@@ -159,10 +159,19 @@ async function refreshVisualSource() {
   }
 }
 visual.addEventListener("change", () => { void refreshVisualSource(); });
+visual.addEventListener("cancel", () => {
+  // A file picker may replace the File object without a change event.
+  if (visual.files?.[0] && visual.files[0] !== validatedVisual) void refreshVisualSource();
+});
 cancel.addEventListener("click", () => { stop(); progress.value = 0; setStatus("中断しました。再実行できます。","cancelled"); });
 encode.addEventListener("click", async () => {
   const a = audio.files?.[0], v = visual.files?.[0];
-  if (busy || !a || !v || v !== validatedVisual) return;
+  if (busy || !a || !v) return;
+  if (v !== validatedVisual) {
+    // Fail closed and revalidate instead of silently ignoring the click.
+    void refreshVisualSource();
+    return;
+  }
   const job = ++sequence;
   clearOutput(); audioPreview.invalidate("動画生成のため試聴を停止しました。"); busy = true; refresh(); progress.value = 0; lines = []; log.textContent = "";
   setStatus("素材を検証中…");

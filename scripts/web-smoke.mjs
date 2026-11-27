@@ -181,6 +181,12 @@ try {
   }
   for(const {ext,seconds,width,height,fit,fps=30,crf=20,filters="none"} of cases){
     await call("DOM.setFileInputFiles",{nodeId:audio,files:[join(tmp,"audio-"+seconds+".mp3")]});
+    // Chromium's CDP can replace File objects without emitting change when
+    // re-selecting the same path. Clear the input and notify the app first,
+    // then select the fixture as a new user selection.
+    await evaluate("document.getElementById('visual').value='';document.getElementById('visual').dispatchEvent(new Event('change',{bubbles:true}))");
+    if(!await evaluate("document.getElementById('encode').disabled&&!document.getElementById('image-preview').hasAttribute('src')"))
+      throw Error("Cleared visual source retained validated state");
     await call("DOM.setFileInputFiles",{nodeId:visual,files:[join(tmp,"image."+ext)]});
     for(const [selector,value] of [["#resolution",width+"x"+height],["#fit",fit],["#fps",String(fps)],["#quality",String(crf)]]){
       await evaluate("(()=>{const el=document.querySelector("+JSON.stringify(selector)+");el.value="+JSON.stringify(value)+";el.dispatchEvent(new Event('change'));})()");
@@ -209,6 +215,8 @@ try {
     let peak=browserRssMiB(),baseline=peak;
     const started=performance.now();
     await evaluate("document.querySelector('#encode').click()");
+    const began=await evaluate("document.querySelector('#status').dataset.state");
+    if(!["busy","done","error"].includes(began))throw Error("Encode did not start: "+await evaluate("document.querySelector('#status').textContent"));
     let lastSample=0;
     const state=await wait(async()=>{
       if(benchmark && Date.now()-lastSample>=2000){lastSample=Date.now();const rss=browserRssMiB();if(rss!==null)peak=Math.max(peak??0,rss);}
