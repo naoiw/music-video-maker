@@ -1,3 +1,4 @@
+import { reportError } from "./diagnostics";
 import { readSavedSettings, writeSavedSettings } from "../services/settings";
 import {
   defaultSettings, isSettingId, parseSettings, settingsFields, settingsIds,
@@ -63,7 +64,7 @@ export async function restoreSettings(): Promise<SettingsValues | null> {
       message = values ? "前回の設定を復元しました。" : "保存設定が破損しているか未対応のため、初期設定を使用します。";
     }
   } catch (error) {
-    message = `設定を読み込めませんでした。初期設定を使用します: ${String(error)}`;
+    message = `初期設定を使用します。${reportError("settings", error)}`;
   }
   apply(values ?? defaultSettings());
   status().textContent = message;
@@ -85,7 +86,7 @@ export function initializeSettingsPersistence(
     error: "設定を保存できませんでした。",
   };
   const save = createSettingsWriter(writeSavedSettings, (state, error) => {
-    output.textContent = state === "error" ? `${messages.error} ${String(error)}` : messages[state];
+    output.textContent = state === "error" ? reportError("settings", error) : messages[state];
   }, initial);
   const persist = (): void => { void save(snapshot()); };
 

@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
-use crate::ffmpeg::Tool;
+use crate::{errors, ffmpeg::Tool};
 
 pub(crate) const CANCELLED: &str = "ENCODE_CANCELLED";
 
@@ -151,7 +151,8 @@ pub(crate) fn run_ffmpeg(
 ) -> Result<(), String> {
     job.check_cancelled()?;
     // Store stderr separately so a full pipe cannot block FFmpeg or cancellation.
-    let mut stderr = tempfile::tempfile().map_err(|error| error.to_string())?;
+    let mut stderr = tempfile::tempfile()
+        .map_err(|error| errors::io_error("FFmpeg 診断用一時ファイル", &error, "OUTPUT_IO"))?;
     let stderr_output = stderr.try_clone().map_err(|error| error.to_string())?;
     let mut child = Tool::Ffmpeg
         .command()
@@ -160,7 +161,7 @@ pub(crate) fn run_ffmpeg(
         .stdout(Stdio::piped())
         .stderr(Stdio::from(stderr_output))
         .spawn()
-        .map_err(|error| format!("FFmpeg: {error}"))?;
+        .map_err(|error| errors::tool_start_error("FFmpeg", &error))?;
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
@@ -211,9 +212,10 @@ pub(crate) fn run_ffmpeg(
             .take(65536)
             .read_to_end(&mut detail)
             .map_err(|error| error.to_string())?;
-        return Err(format!(
-            "FFmpeg exited with {result}: {}",
-            String::from_utf8_lossy(&detail).trim()
+        return Err(errors::process_error(
+            &format!("FFmpeg ({phase:?})"),
+            result,
+            &detail,
         ));
     }
     Ok(())

@@ -238,16 +238,40 @@ fn validate_destination(path: &Path) -> Result<&Path, String> {
             .and_then(|value| value.to_str())
             .is_some_and(|value| value.eq_ignore_ascii_case("mp4"))
     {
-        return Err("MP4 の保存先を指定してください。".into());
+        return Err(crate::errors::tagged(
+            "OUTPUT_PATH",
+            "MP4 の保存先を指定してください。",
+        ));
     }
     match path.symlink_metadata() {
-        Ok(_) => return Err("既存ファイルは上書きできません。別の名前を指定してください。".into()),
+        Ok(_) => {
+            return Err(crate::errors::tagged(
+                "OUTPUT_EXISTS",
+                "既存ファイルは上書きできません。別の名前を指定してください。",
+            ));
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(format!("保存先を確認できません: {error}")),
+        Err(error) => {
+            return Err(crate::errors::io_error(
+                "保存先を確認できません",
+                &error,
+                "OUTPUT_IO",
+            ));
+        }
     }
-    path.parent()
-        .filter(|parent| parent.is_dir())
-        .ok_or_else(|| "保存先のフォルダがありません。".to_owned())
+    let parent = path
+        .parent()
+        .ok_or_else(|| crate::errors::tagged("OUTPUT_PATH", "保存先のフォルダがありません。"))?;
+    let metadata = parent.metadata().map_err(|error| {
+        crate::errors::io_error("保存先のフォルダを確認できません", &error, "OUTPUT_IO")
+    })?;
+    if !metadata.is_dir() {
+        return Err(crate::errors::tagged(
+            "OUTPUT_PATH",
+            "保存先がフォルダではありません。",
+        ));
+    }
+    Ok(parent)
 }
 
 struct PreparedAudio {
@@ -268,7 +292,9 @@ fn prepare_audio(
     let directory = tempfile::Builder::new()
         .prefix(".music-video-maker-audio-")
         .tempdir_in(parent)
-        .map_err(|error| format!("音声の一時フォルダを作成できません: {error}"))?;
+        .map_err(|error| {
+            crate::errors::io_error("音声の一時フォルダを作成できません", &error, "OUTPUT_IO")
+        })?;
     let path = directory.path().join("filtered.wav");
     let output = path
         .to_str()
@@ -329,11 +355,15 @@ fn prepare_audio(
         "-i",
         output,
     ])?;
-    let duration = positive_duration(String::from_utf8_lossy(&probe.stdout).trim())?;
+    let duration = positive_duration(String::from_utf8_lossy(&probe.stdout).trim())
+        .map_err(|error| crate::errors::tagged("OUTPUT_VERIFY", error))?;
     if (duration - info.duration_seconds).abs() > 0.2 {
-        return Err(format!(
-            "音声加工後の長さが入力と一致しません（入力 {:.3} 秒、加工後 {duration:.3} 秒）。",
-            info.duration_seconds
+        return Err(crate::errors::tagged(
+            "OUTPUT_VERIFY",
+            format!(
+                "音声加工後の長さが入力と一致しません（入力 {:.3} 秒、加工後 {duration:.3} 秒）。",
+                info.duration_seconds
+            ),
         ));
     }
     job.check_cancelled()?;
@@ -353,7 +383,9 @@ pub(crate) fn encode_video(
     job: &EncodeJob,
 ) -> Result<VideoInfo, String> {
     job.check_cancelled()?;
-    settings.validate()?;
+    settings
+        .validate()
+        .map_err(|error| crate::errors::tagged("OUTPUT_SETTINGS", error))?;
     let _guard = ENCODE_LOCK
         .try_lock()
         .map_err(|_| "別の動画生成を実行中です。".to_owned())?;
@@ -362,7 +394,8 @@ pub(crate) fn encode_video(
 
     // Revalidate sources at export time; do not trust GUI metadata.
     let audio_info = audio::probe_audio(audio_path)?;
-    let audio_graph = audio_filters::compile(filters, audio_info.sample_rate)?;
+    let audio_graph = audio_filters::compile(filters, audio_info.sample_rate)
+        .map_err(|error| crate::errors::tagged("FILTER", error))?;
     job.set_duration(audio_info.duration_seconds);
     job.check_cancelled()?;
     let image = visual::load_visual(visual_path)?;
@@ -395,7 +428,9 @@ pub(crate) fn encode_video(
         .prefix(".music-video-maker-")
         .suffix(".mp4")
         .tempfile_in(parent)
-        .map_err(|error| format!("一時ファイルを作成できません: {error}"))?
+        .map_err(|error| {
+            crate::errors::io_error("一時ファイルを作成できません", &error, "OUTPUT_IO")
+        })?
         .into_temp_path();
     let temp_path = temporary
         .to_str()
@@ -431,23 +466,29 @@ pub(crate) fn encode_video(
         "-i",
         temp_path,
     ])?;
-    let duration_seconds = validate_output(&probe.stdout, settings)?;
+    let duration_seconds = validate_output(&probe.stdout, settings)
+        .map_err(|error| crate::errors::tagged("OUTPUT_VERIFY", error))?;
     if let Some(audio) = prepared
         .as_ref()
         .filter(|audio| (duration_seconds - audio.duration).abs() > 0.2)
     {
-        return Err(format!(
-            "動画の長さが加工音と一致しません（動画 {duration_seconds:.3} 秒、加工音 {:.3} 秒）。",
-            audio.duration
+        return Err(crate::errors::tagged(
+            "OUTPUT_VERIFY",
+            format!(
+                "動画の長さが加工音と一致しません（動画 {duration_seconds:.3} 秒、加工音 {:.3} 秒）。",
+                audio.duration
+            ),
         ));
     }
     let size_bytes = std::fs::metadata(temp_path)
-        .map_err(|error| format!("出力ファイルを確認できません: {error}"))?
+        .map_err(|error| {
+            crate::errors::io_error("出力ファイルを確認できません", &error, "OUTPUT_IO")
+        })?
         .len();
     job.begin_saving()?;
-    temporary
-        .persist_noclobber(destination)
-        .map_err(|error| format!("動画を保存できません: {error}"))?;
+    temporary.persist_noclobber(destination).map_err(|error| {
+        crate::errors::io_error("動画を保存できません", &error.error, "OUTPUT_IO")
+    })?;
 
     Ok(VideoInfo {
         duration_seconds,

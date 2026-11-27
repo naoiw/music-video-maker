@@ -1,3 +1,4 @@
+import { reportError } from "./diagnostics";
 import { loadAudio, selectAudio, type AudioSource } from "../services/audio";
 
 let selectedAudio: AudioSource | null = null;
@@ -51,7 +52,7 @@ export function initializeAudioSource(onChange: () => void = () => {}): (path?: 
       ].join(" · ");
       status.textContent = "";
     } catch (error) {
-      status.textContent = `読み込み失敗: ${String(error)}`;
+      status.textContent = reportError("audio", error);
     } finally {
       button.disabled = false;
       onChange();

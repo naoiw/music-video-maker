@@ -1,3 +1,4 @@
+import { reportError } from "./diagnostics";
 import { getSelectedAudio } from "./audio-source";
 import { getFilterChain } from "./audio-filters";
 import { getSelectedVisual } from "./visual-source";
@@ -100,7 +101,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
         outputName.textContent = outputPath;
       }
     } catch (error) {
-      errorMessage = `保存先の選択に失敗: ${String(error)}`;
+      errorMessage = reportError("output", error);
     } finally {
       choosingOutput = false;
       refresh();
@@ -156,7 +157,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
       if (activeJobId !== id) return;
       cancelRequested = false;
       cancelButton.disabled = !canCancel;
-      status.textContent = `中断要求に失敗: ${String(error)}`;
+      status.textContent = reportError("cancel", error);
     }
   });
 
@@ -194,7 +195,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
     } catch (error) {
       resultMessage = String(error) === "ENCODE_CANCELLED"
         ? "生成を中断しました。再実行できます。"
-        : `生成失敗: ${String(error)}`;
+        : reportError("encode", error);
     } finally {
       activeJobId = null;
       window.clearInterval(timer);

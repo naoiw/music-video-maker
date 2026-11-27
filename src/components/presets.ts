@@ -1,3 +1,4 @@
+import { reportError } from "./diagnostics";
 import { snapshotFilterSettings } from "./settings";
 import { readSavedPresets, writeSavedPresets } from "../services/settings";
 import {
@@ -60,7 +61,7 @@ export async function initializePresets(applyFilters: (values: FilterSettings) =
       status.textContent = message;
       render(selected);
     } catch (error) {
-      status.textContent = `プリセットを保存できませんでした: ${String(error)}`;
+      status.textContent = reportError("presets", error);
     } finally {
       busy = false;
       updateControls();
@@ -122,7 +123,7 @@ export async function initializePresets(applyFilters: (values: FilterSettings) =
     readable = true;
     status.textContent = presets.length ? `${presets.length} 件のプリセットを読み込みました。` : "プリセットは未登録です。";
   } catch (error) {
-    status.textContent = `プリセットを読み込めませんでした: ${String(error)} 全削除で初期化できます。`;
+    status.textContent = `${reportError("presets", error)} 全削除で初期化できます。`;
   } finally {
     busy = false;
     render("");

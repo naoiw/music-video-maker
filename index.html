@@ -118,7 +118,14 @@
       </section>
     </div>
   </main>
-  <footer class="footer"><details><summary>実行環境</summary><p id="media-status" role="status">メディア処理環境を確認中</p></details></footer>
+  <footer class="footer">
+    <details><summary>実行環境</summary><p id="media-status" role="status">メディア処理環境を確認中</p></details>
+    <details id="diagnostics" hidden>
+      <summary>診断情報（直近8件）</summary>
+      <p class="muted">原因調査用の情報です。ファイルパス等が含まれる場合があるため、共有前に確認してください。</p>
+      <div id="diagnostic-list"></div>
+    </details>
+  </footer>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

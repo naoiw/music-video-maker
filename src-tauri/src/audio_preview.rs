@@ -1,4 +1,4 @@
-use crate::{audio, audio_filters, ffmpeg::Tool};
+use crate::{audio, audio_filters, errors, ffmpeg::Tool};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Serialize;
 use std::sync::Mutex;
@@ -33,8 +33,10 @@ pub(crate) fn render(
     if !(8_000..=48_000).contains(&info.sample_rate) || !(1..=2).contains(&info.channels) {
         return Err("非対応の音声形式です。".into());
     }
-    let graph = audio_filters::compile(filters, info.sample_rate)?;
-    let temporary = tempfile::tempdir().map_err(|error| error.to_string())?;
+    let graph = audio_filters::compile(filters, info.sample_rate)
+        .map_err(|error| errors::tagged("FILTER", error))?;
+    let temporary = tempfile::tempdir()
+        .map_err(|error| errors::io_error("試聴用一時フォルダ", &error, "OUTPUT_IO"))?;
     let output = temporary.path().join("preview.wav");
     let output_path = output
         .to_str()
@@ -81,11 +83,15 @@ pub(crate) fn render(
         output_path,
     ]);
     Tool::Ffmpeg.run(&args)?;
-    let size = output.metadata().map_err(|error| error.to_string())?.len();
+    let size = output
+        .metadata()
+        .map_err(|error| errors::io_error("試聴データの確認", &error, "OUTPUT_IO"))?
+        .len();
     if size > MAX_WAV_BYTES || size <= 44 {
         return Err("試聴データのサイズが無効です。".into());
     }
-    let bytes = std::fs::read(output).map_err(|error| error.to_string())?;
+    let bytes = std::fs::read(output)
+        .map_err(|error| errors::io_error("試聴データの読み込み", &error, "OUTPUT_IO"))?;
     if bytes.len() as u64 > MAX_WAV_BYTES
         || !bytes.starts_with(b"RIFF")
         || bytes.get(8..12) != Some(b"WAVE".as_slice())

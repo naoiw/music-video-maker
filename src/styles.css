@@ -80,3 +80,7 @@ summary { cursor: pointer; }
 .preset-controls label { font-size: 12px; }
 .preset-controls input, .preset-controls select { width: 100%; min-width: 0; }
 .preset-controls .actions { margin-top: 0; }
+
+#diagnostics { margin-top: 12px; }
+#diagnostic-list section { margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+#diagnostic-list pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; margin: 6px 0 0; user-select: text; }

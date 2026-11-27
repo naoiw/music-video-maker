@@ -1,3 +1,4 @@
+use crate::errors;
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read, Write};
 use std::path::Path;
@@ -19,12 +20,18 @@ fn read_json(dir: &Path, file_name: &str, max_bytes: u64) -> Result<Option<Strin
     let file = match File::open(dir.join(file_name)) {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.to_string()),
+        Err(error) => {
+            return Err(errors::io_error(
+                "設定ファイルを開けません",
+                &error,
+                "SETTINGS_IO",
+            ));
+        }
     };
     let mut json = String::new();
     file.take(max_bytes + 1)
         .read_to_string(&mut json)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| errors::io_error("設定ファイルの読み込み", &error, "SETTINGS_IO"))?;
     if json.len() as u64 > max_bytes {
         return Err("設定ファイルが大きすぎます。".into());
     }
@@ -47,19 +54,21 @@ fn write_json(dir: &Path, file_name: &str, max_bytes: u64, json: &str) -> Result
     if !value.is_object() {
         return Err("設定JSONが無効です。".into());
     }
-    fs::create_dir_all(dir).map_err(|error| error.to_string())?;
-    let mut temporary = tempfile::NamedTempFile::new_in(dir).map_err(|error| error.to_string())?;
+    fs::create_dir_all(dir)
+        .map_err(|error| errors::io_error("設定フォルダの作成", &error, "SETTINGS_IO"))?;
+    let mut temporary = tempfile::NamedTempFile::new_in(dir)
+        .map_err(|error| errors::io_error("設定用一時ファイル", &error, "SETTINGS_IO"))?;
     temporary
         .write_all(json.as_bytes())
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| errors::io_error("設定ファイルの書き込み", &error, "SETTINGS_IO"))?;
     temporary
         .as_file()
         .sync_all()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| errors::io_error("設定ファイルの同期", &error, "SETTINGS_IO"))?;
     // Replace only after the complete new file has been written successfully.
     temporary
         .persist(dir.join(file_name))
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| errors::io_error("設定ファイルの置換", &error.error, "SETTINGS_IO"))?;
     Ok(())
 }
 

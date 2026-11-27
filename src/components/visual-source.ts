@@ -1,3 +1,4 @@
+import { reportError } from "./diagnostics";
 import { loadVisual, selectVisual, type VisualSource } from "../services/visual";
 
 let selectedVisual: VisualSource | null = null;
@@ -46,7 +47,7 @@ export function initializeVisualSource(onChange: () => void = () => {}): (path?:
       ].join(" · ");
       status.textContent = "";
     } catch (error) {
-      status.textContent = `読み込み失敗: ${String(error)}`;
+      status.textContent = reportError("image", error);
     } finally {
       button.disabled = false;
       onChange();

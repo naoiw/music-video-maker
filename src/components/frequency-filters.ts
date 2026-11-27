@@ -1,3 +1,4 @@
+import { reportError } from "./diagnostics";
 import { compileAudioFilters, type FilterChain } from "../services/audio-filters";
 import { getSelectedAudio } from "./audio-source";
 
@@ -85,7 +86,7 @@ export function initializeFrequencyFilters(available: boolean): () => void {
         : "設定有効 · MP3を選択してください。";
     } catch (error) {
       if (current !== revision) return;
-      status.textContent = `設定エラー: ${String(error)}`;
+      status.textContent = reportError("filter", error);
     }
   }
 
