@@ -27,8 +27,19 @@ try {
   }
   run("ffmpeg",["-y","-f","lavfi","-i",benchmark?"testsrc2=size=1920x1080:rate=1":"color=c=red:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.png")]);
   run("ffmpeg",["-y","-f","lavfi","-i",benchmark?"testsrc=size=1920x1080:rate=1":"color=c=blue:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.jpg")]);
-  // Two clearly distinguishable 200 ms frames; no embedded repeat flag.
-  run("ffmpeg",["-y","-f","lavfi","-i","color=c=red:s=64x48:r=5:d=0.2","-f","lavfi","-i","color=c=blue:s=64x48:r=5:d=0.2","-filter_complex","[0:v][1:v]concat=n=2:v=1:a=0","-threads","1","-loop","-1",join(tmp,"image.gif")]);
+  // Generate two explicit RGB frames with distinct timestamps, independent of concat
+  // filter behavior across FFmpeg versions. The last frame also lasts 200 ms.
+  const frames=Buffer.alloc(64*48*3*2);
+  for(let i=0;i<64*48;i++){frames[i*3]=255;frames[(64*48+i)*3+2]=255;}
+  const raw=join(tmp,"gif-frames.rgb"),gif=join(tmp,"image.gif");
+  await writeFile(raw,frames);
+  run("ffmpeg",["-y","-f","rawvideo","-pixel_format","rgb24","-video_size","64x48","-framerate","5","-i",raw,"-frames:v","2","-threads","1","-loop","-1","-final_delay","20",gif]);
+  const gifInfo=JSON.parse(run("ffprobe",["-v","error","-select_streams","v:0","-show_frames","-show_entries","frame=pts_time,duration_time,pkt_duration_time","-of","json",gif]).toString());
+  const gifFrames=gifInfo.frames;
+  if(gifFrames.length!==2 || gifFrames.some((frame,i)=>Math.abs(Number(frame.pts_time)-i*0.2)>0.001 || Math.abs(Number(frame.duration_time??frame.pkt_duration_time)-0.2)>0.001 || !Number.isFinite(Number(frame.pts_time)) || !Number.isFinite(Number(frame.duration_time??frame.pkt_duration_time))))throw Error("Invalid GIF fixture timestamps: "+JSON.stringify(gifFrames));
+  const gifPixels=run("ffmpeg",["-v","error","-i",gif,"-vf","crop=2:2,scale=1:1,format=rgb24","-threads","1","-f","rawvideo","-"]);
+  if(gifPixels.length!==6||gifPixels[0]<180||gifPixels[2]>80||gifPixels[3]>80||gifPixels[5]<180)throw Error("Invalid GIF fixture colors: "+Array.from(gifPixels));
+  console.log("GIF fixture verified: red at 0.0s, blue at 0.2s, each 0.2s duration.");
   server=spawn(process.execPath,["node_modules/vite/bin/vite.js","preview","--config","vite.web.config.ts","--host","127.0.0.1"],{stdio:"inherit"});
   await wait(async()=> (await fetch(base)).ok);
   chrome=spawn(process.env.CHROME_BIN||"google-chrome",["--headless","--no-sandbox","--disable-dev-shm-usage","--no-first-run","--remote-debugging-port=0","--user-data-dir="+join(tmp,"chrome"),"about:blank"],{stdio:"ignore"});
