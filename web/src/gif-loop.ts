@@ -1,3 +1,5 @@
+import { assertImageDimensions, inspectImageDimensions } from "./image-dimensions.ts";
+
 // GIF89a application extension: NETSCAPE2.0, loop count zero (infinite).
 const infiniteLoop = Uint8Array.from([0x21,0xff,0x0b,78,69,84,83,67,65,80,69,50,46,48,3,1,0,0,0]);
 const invalid = () => new Error("GIFのデータが破損しています。");
@@ -24,6 +26,7 @@ export function prepareLoopingGif(bytes: Uint8Array): { bytes: Uint8Array<ArrayB
   requireBytes(bytes, 0, 13);
   const signature = String.fromCharCode(...bytes.subarray(0, 6));
   if (signature !== "GIF87a" && signature !== "GIF89a") throw invalid();
+  const canvas = inspectImageDimensions(bytes,"gif");
   const tableSize = (flags: number) => flags & 0x80 ? 3 * (1 << ((flags & 7) + 1)) : 0;
   const headerEnd = 13 + tableSize(bytes[10]);
   requireBytes(bytes, 0, headerEnd);
@@ -68,6 +71,11 @@ export function prepareLoopingGif(bytes: Uint8Array): { bytes: Uint8Array<ArrayB
       cursor = end;
     } else if (tag === 0x2c) {
       requireBytes(bytes, cursor, 9);
+      const u16 = (at: number) => bytes[at] | (bytes[at+1]<<8);
+      const left=u16(cursor), top=u16(cursor+2);
+      const frame=assertImageDimensions(u16(cursor+4),u16(cursor+6));
+      if(left+frame.width>canvas.width || top+frame.height>canvas.height)
+        throw new Error("GIFのフレームが画像範囲を超えています。");
       cursor += 9 + tableSize(bytes[cursor + 8]);
       requireBytes(bytes, cursor, 1); // LZW minimum code size
       cursor = subblocksEnd(bytes, cursor + 1);
