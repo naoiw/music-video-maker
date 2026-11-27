@@ -47,6 +47,22 @@ impl OutputSettings {
         Ok(())
     }
 
+    // GIFs retain their timing and frames, so compose both layers in FFmpeg.
+    // Crop before downscaling to avoid oversized intermediates on extreme ratios.
+    fn animated_blurred_filter(self) -> String {
+        let (width, height) = (self.width, self.height);
+        let (small_width, small_height) = (width / 4, height / 4);
+        let max_height = height * 4 / 5;
+        let sigma = f64::from(width.min(height)) * 0.02 / 4.0;
+        format!(
+            "format=gbrap,premultiply=inplace=1,format=rgb24,split=2[bg][fg];\
+             [bg]crop=w='max(1,min(iw,ih*{width}/{height}))':h='max(1,min(ih,iw*{height}/{width}))':exact=1,\
+             scale={small_width}:{small_height},gblur=sigma={sigma},scale={width}:{height},setsar=1[back];\
+             [fg]scale={width}:{max_height}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[front];\
+             [back][front]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1"
+        )
+    }
+
     fn filter(self) -> String {
         let (width, height) = (self.width, self.height);
         let (mode, placement) = match self.fit {
@@ -112,7 +128,11 @@ fn encoder_args(
 ) -> Vec<String> {
     let fps = settings.fps.to_string();
     let crf = settings.crf.to_string();
-    let filter = settings.filter();
+    let filter = if matches!(source, VisualKind::Gif) && matches!(settings.fit, ImageFit::Blurred) {
+        settings.animated_blurred_filter()
+    } else {
+        settings.filter()
+    };
     let mut args = vec![
         "-hide_banner",
         "-loglevel",
@@ -407,9 +427,11 @@ pub(crate) fn encode_video(
         "GIF" => VisualKind::Gif,
         _ => return Err("非対応の画像形式です。".into()),
     };
-    // The blurred layout is static, even for GIF. Prepare one PNG and loop
-    // it rather than blurring and compositing every video frame.
-    let composed = if matches!(settings.fit, ImageFit::Blurred) {
+    // Static sources use the same precomposed PNG as their preview. Animated
+    // GIFs bypass this step so both layers can retain every source frame.
+    let composed = if matches!(settings.fit, ImageFit::Blurred)
+        && !matches!(source, VisualKind::Gif)
+    {
         let canvas = visual::blurred_image(&image, settings.width, settings.height)?;
         let directory = tempfile::Builder::new()
             .prefix(".music-video-maker-image-")
@@ -564,6 +586,10 @@ mod tests {
         assert!(args.windows(2).any(|pair| pair == ["-f", "gif"]));
         assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "1"]));
         assert!(args.windows(2).any(|pair| pair == ["-stream_loop", "-1"]));
+        assert!(args.iter().any(|arg| arg.contains("gblur=sigma=")));
+        assert!(args
+            .iter()
+            .any(|arg| arg.contains("overlay=(W-w)/2:(H-h)/2")));
         assert!(!args.iter().any(|arg| arg == "-pattern_type"));
         assert!(args.iter().any(|arg| arg == "-shortest"));
     }
@@ -641,6 +667,10 @@ mod tests {
     }
 
     fn sample_color(path: &Path, timestamp: &str) -> Vec<u8> {
+        sample_color_at(path, timestamp, "crop=2:2:960:540,format=rgb24")
+    }
+
+    fn sample_color_at(path: &Path, timestamp: &str, filter: &str) -> Vec<u8> {
         Tool::Ffmpeg
             .run(&[
                 "-v",
@@ -652,7 +682,7 @@ mod tests {
                 "-frames:v",
                 "1",
                 "-vf",
-                "crop=2:2:960:540,format=rgb24",
+                filter,
                 "-f",
                 "rawvideo",
                 "-",
@@ -689,7 +719,6 @@ mod tests {
             ("infinite-loop", Some(Repeat::Infinite)),
         ] {
             let cover = dir.path().join(format!("{name}.gif"));
-            let output = dir.path().join(format!("{name}.mp4"));
             {
                 let mut encoder = GifEncoder::new(std::fs::File::create(&cover).unwrap());
                 if let Some(repeat) = repeat {
@@ -707,53 +736,59 @@ mod tests {
                 }
             }
 
-            let info = encode_video(
-                audio.to_str().unwrap(),
-                cover.to_str().unwrap(),
-                output.to_str().unwrap(),
-                OutputSettings {
-                    fit: ImageFit::Contain,
-                    ..OutputSettings::default()
-                },
-                &[],
-                &EncodeJob::default(),
-            )
-            .unwrap();
-            assert!((info.duration_seconds - 2.3).abs() < 0.2);
-            assert!(info.size_bytes > 0);
-
-            // Check decoded colors during the first cycle and well after the original GIF ends.
-            for (timestamp, red) in [
-                ("0.1", true),
-                ("0.35", false),
-                ("1.6", true),
-                ("1.85", false),
-                ("2.1", true),
+            for (mode, fit) in [
+                ("contain", ImageFit::Contain),
+                ("cover", ImageFit::Cover),
+                ("blurred", ImageFit::Blurred),
             ] {
-                let pixel = sample_color(&output, timestamp);
-                assert_eq!(pixel.len(), 12);
-                if red {
-                    assert!(pixel[0] > 200 && pixel[2] < 50, "{name}: {timestamp}");
-                } else {
-                    assert!(pixel[2] > 200 && pixel[0] < 50, "{name}: {timestamp}");
-                }
-            }
-
-            if name == "no-loop" {
-                let still = dir.path().join("blurred.mp4");
+                let output = dir.path().join(format!("{name}-{mode}.mp4"));
                 let info = encode_video(
                     audio.to_str().unwrap(),
                     cover.to_str().unwrap(),
-                    still.to_str().unwrap(),
-                    OutputSettings::default(),
+                    output.to_str().unwrap(),
+                    OutputSettings {
+                        fit,
+                        ..OutputSettings::default()
+                    },
                     &[],
                     &EncodeJob::default(),
                 )
                 .unwrap();
                 assert!((info.duration_seconds - 2.3).abs() < 0.2);
-                for timestamp in ["0.1", "0.35", "1.85"] {
-                    let pixel = sample_color(&still, timestamp);
-                    assert!(pixel[0] > 200 && pixel[2] < 50, "{timestamp}");
+                assert!(info.size_bytes > 0);
+
+                // Test both foreground and, in blurred mode, background well
+                // after the original GIF ends. Do not only probe duration.
+                for (timestamp, red) in [
+                    ("0.1", true),
+                    ("0.35", false),
+                    ("1.6", true),
+                    ("1.85", false),
+                    ("2.1", true),
+                ] {
+                    let foreground = sample_color(&output, timestamp);
+                    let mut pixels = vec![foreground];
+                    if matches!(fit, ImageFit::Blurred) {
+                        pixels.push(sample_color_at(
+                            &output,
+                            timestamp,
+                            "crop=2:2:960:50,format=rgb24",
+                        ));
+                    }
+                    for pixel in pixels {
+                        assert_eq!(pixel.len(), 12);
+                        if red {
+                            assert!(
+                                pixel[0] > 200 && pixel[2] < 50,
+                                "{name}/{mode}: {timestamp}"
+                            );
+                        } else {
+                            assert!(
+                                pixel[2] > 200 && pixel[0] < 50,
+                                "{name}/{mode}: {timestamp}"
+                            );
+                        }
+                    }
                 }
             }
         }

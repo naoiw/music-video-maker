@@ -34,7 +34,26 @@ async function drainPreview(preview: HTMLElement): Promise<void> {
   }
 }
 
-/** Use native composition for exact preview/export layout; retain GIF playback in legacy modes. */
+/** Static images use the native composition. GIF preview uses two live image layers. */
+function animatedBlurredPreview(image: HTMLImageElement, source: VisualSource, settings: OutputSettings): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "animated-blurred-preview";
+  const background = new Image();
+  background.alt = "";
+  background.className = "gif-blurred-background";
+  background.src = image.src;
+  const foreground = new Image();
+  foreground.alt = source.name;
+  foreground.className = "gif-blurred-foreground";
+  const scale = Math.min(settings.width / source.width, settings.height * .8 / source.height);
+  foreground.style.width = `${source.width * scale / settings.width * 100}%`;
+  foreground.style.height = `${source.height * scale / settings.height * 100}%`;
+  foreground.src = image.src;
+  wrapper.append(background, foreground);
+  return wrapper;
+}
+
+/** Use exact native composition for static images and live playback for GIFs. */
 export function refreshVisualPreview(settings: OutputSettings): void {
   const preview = document.getElementById("visual-preview");
   if (!preview || !selectedVisual || !originalImage) return;
@@ -44,6 +63,11 @@ export function refreshVisualPreview(settings: OutputSettings): void {
   if (settings.fit !== "blurred") {
     pending = null;
     if (preview.firstElementChild !== originalImage) preview.replaceChildren(originalImage);
+    return;
+  }
+  if (selectedVisual.format === "GIF") {
+    pending = null;
+    preview.replaceChildren(animatedBlurredPreview(originalImage, selectedVisual, settings));
     return;
   }
   preview.textContent = "合成プレビューを生成しています…";
