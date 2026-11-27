@@ -26,7 +26,7 @@ export function encodeArgs(kind: ImageKind, resolution: Resolution, fit: Fit): s
     ? "scale=" + w + ":" + h + ":force_original_aspect_ratio=decrease:force_divisible_by=2,pad=" + w + ":" + h + ":(ow-iw)/2:(oh-ih)/2:black,setsar=1"
     : "scale=" + w + ":" + h + ":force_original_aspect_ratio=increase:force_divisible_by=2,crop=" + w + ":" + h + ",setsar=1";
   const visual = kind === "gif"
-    ? ["-stream_loop","-1","-ignore_loop","1","-f","gif"]
+    ? ["-ignore_loop","0","-f","gif"]
     : ["-framerate","30","-f","image2"];
   // Decode and resize a still once, then loop only the converted output frame.
   // GIF must retain its original sequence and timing; never use the still-frame loop.

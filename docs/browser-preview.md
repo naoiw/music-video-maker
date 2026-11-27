@@ -45,7 +45,7 @@ PR #77 の [ブラウザCI](https://github.com/naoiw/music-video-maker/actions/r
 
 ### 静止画処理の改善案
 
-PNG/JPEGは画像のデコード・スケール・配置・yuv420p変換を一度行い、変換済み1フレームだけをloopフィルタで反復する。30fps、CRF20、H.264/AAC、出力サイズ、-shortest、300秒上限を維持する。GIFは従来のstream_loopで全フレームを保持する。短いH.264区間をstream copyで反復する二段方式は、ネイティブFFmpegで-shortestだけでは映像尺が大幅に延びることを確認したため採用しない。音声尺の正確さを優先する。改善後のWASM性能はCIで確認する。
+PNG/JPEGは画像のデコード・スケール・配置・yuv420p変換を一度行い、変換済み1フレームだけをloopフィルタで反復する。30fps、CRF20、H.264/AAC、出力サイズ、-shortest、300秒上限を維持する。GIFはコンテナのループ指定を無限再生に正規化し、GIF demuxerの ignore_loop=0 を使用する。stream_loopではWASMでフレーム表示時間が崩れたため使用しない。LZWデータ・表示時間・透過・disposal等は変更しない。GIF専用ループ方式はネイティブFFmpeg 7.1.5で検証済み。WASMの結果はCIで確認する。短いH.264区間をstream copyで反復する二段方式は、ネイティブFFmpegで-shortestだけでは映像尺が大幅に延びることを確認したため採用しない。音声尺の正確さを優先する。改善後のWASM性能はCIで確認する。
 
 ブラウザ短尺CIはcontain/coverの両方でPNG/JPEGの静止画保持、GIFの初回再生後の色変化・繰り返しを実際の出力フレームから確認する。#79のブラウザ側の一部に対応するが、Windows版のぼかし背景や未実装のブラウザ配置モードは対象外。
 

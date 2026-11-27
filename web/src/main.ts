@@ -1,5 +1,6 @@
 import "./styles.css";
 import workerSource from "./encoder-worker.js?raw";
+import { forceInfiniteGifLoop } from "./gif-loop";
 import { assertInputs, encodeArgs, imageKind, LIMITS, type Resolution, type Fit } from "./encode-plan";
 
 function get<T extends HTMLElement>(id: string): T {
@@ -95,7 +96,10 @@ encode.addEventListener("click", async () => {
     const response = await fetch(manifestURL,{cache:"no-store",credentials:"same-origin"});
     if (!response.ok) throw new Error("処理エンジンの検証情報がありません。web:prepareを実行してください。");
     const manifest: unknown = await response.json();
-    const [audioBytes,visualBytes] = await Promise.all([a.arrayBuffer(),v.arrayBuffer()]);
+    const [audioBytes,originalVisualBytes] = await Promise.all([a.arrayBuffer(),v.arrayBuffer()]);
+    const visualBytes = kind === "gif"
+      ? forceInfiniteGifLoop(new Uint8Array(originalVisualBytes)).buffer
+      : originalVisualBytes;
     if (job !== sequence) return;
     const workerURL = URL.createObjectURL(new Blob([workerSource],{type:"text/javascript"}));
     try { worker = new Worker(workerURL); } finally { URL.revokeObjectURL(workerURL); }
