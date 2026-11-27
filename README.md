@@ -2,11 +2,18 @@
 
 MP3 と画像を合成し、音声フィルタで音質を調整して YouTube 向けの MP4 を生成する Windows 用ローカル GUI ツールです。Suno の楽曲にも対応します。素材は外部に送信しません。
 
-## ダウンロード
+## セットアップとビルド（Windows 10 / 11 x64）
 
-現在は MVP（v0.1.0）の初回リリース準備中です。正式な配布用 ZIP はまだ公開されていません。
+本リポジトリはソースコードのみを公開します。コンパイル済み exe・FFmpeg の配布は行いません。
 
-公開後は [GitHub Releases](https://github.com/naoiw/music-video-maker/releases) の Assets から Windows x64 向けポータブル ZIP をダウンロードし、すべて展開して `music-video-maker.exe` を起動します。Node.js・Rust・FFmpeg の個別インストールやコマンド操作は不要です。WebView2 Runtime が未導入の場合は別途導入が必要です。
+1. GitHub の **Code → Download ZIP** でソースを取得し、すべて展開します（git clone でも可）。
+2. `setup.bat` をダブルクリックします。不足している Node.js 26、C++ Build Tools、Rust、FFmpeg/FFprobe、WebView2 を WinGet 等で導入します。初回はネット接続が必要で、インストーラーや UAC の確認が出る場合があります。
+3. セットアップ完了後、必要に応じて Windows を再起動し、`build.bat` をダブルクリックします。
+4. `src-tauri/target/release/music-video-maker.exe` をダブルクリックして起動します。
+
+以降は exe から GUI を使用できます。ソースを更新した場合は再ビルドしてください。FFmpeg/FFprobe は PATH 上に必要です。
+
+詳細な PowerShell 手順、pnpm の利用、エラー時の対処は [環境構築とビルド](docs/setup.md) を参照してください。
 
 ## 使い方
 
@@ -38,8 +45,9 @@ Rust / Tauri / TypeScript / FFmpeg を使用しています。
 - [音声フィルタ処理基盤](docs/audio-filters.md)
 - [開発フロー](docs/development.md)
 - [テスト・検証](docs/testing.md)
-- [Windows 配布パッケージ](docs/windows-package.md)
-- [リリース手順](docs/release.md)
+- [環境構築とビルド](docs/setup.md)
+- [FFmpeg / FFprobe](docs/ffmpeg.md)
+- [MVP総合検証](docs/mvp-validation.md)
 - [Issues](https://github.com/naoiw/music-video-maker/issues)
 
 ## License
@@ -60,4 +68,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-[Apache License 2.0](LICENSE)。外部ライブラリおよび FFmpeg の配布審査は [配布パッケージ](docs/windows-package.md) を参照してください。
+[Apache License 2.0](LICENSE)。FFmpeg は別途導入する独立したプログラムであり、各ソフトウェアのライセンスが適用されます。

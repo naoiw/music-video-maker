@@ -2,19 +2,16 @@
 
 Music Video Maker は、MP3 と画像から YouTube 投稿などに使える MP4 を作成する Windows 向けローカル GUI ツールです。Suno の楽曲だけでなく、対応する任意の MP3 を使用できます。素材のアップロードやアカウント登録は必要ありません。
 
-> 現在は v0.1.0 の初回リリース準備中です。以下の導入手順は正式な配布 ZIP が公開された後のものです。開発確認用の exe 単体は正式な配布物ではありません。
+## 1. ソース取得・ビルド・起動
 
-## 1. ダウンロードと起動
+対象は Windows 10 / 11 x64 です。ビルド済みバイナリは公開しません。
 
-対象は Windows 10 / 11 x64 です。正式なポータブル版では、Node.js、Rust、FFmpeg の個別インストールやコマンド操作は不要です。
+1. [リポジトリ](https://github.com/naoiw/music-video-maker) の Code → Download ZIP からソースを取得し、「すべて展開」する（git clone でも可）。
+2. `setup.bat` をダブルクリックし、不足するツールの導入を行う。初回はネット接続・インストーラーの操作が必要。
+3. セットアップ完了後、必要に応じて Windows を再起動し、`build.bat` をダブルクリックする。
+4. `src-tauri/target/release/music-video-maker.exe` をダブルクリックする。以降は GUI で操作する。ソース更新時には再ビルドする。
 
-1. [GitHub Releases](https://github.com/naoiw/music-video-maker/releases) を開く。
-2. 公開済みリリースの Assets から `music-video-maker-v0.1.0-windows-x64.zip`（ファイル名のバージョンはリリースごとに異なる）をダウンロードする。Source code (zip) はアプリの配布 ZIP ではない。
-3. エクスプローラーで ZIP を右クリックして「すべて展開」を選択する。ZIP 内から直接起動しない。
-4. 展開したフォルダの `music-video-maker.exe` をダブルクリックする。`ffmpeg.exe` と `ffprobe.exe` は同じフォルダに置いたままにする。
-5. 起動しない場合は [Microsoft 公式の WebView2 Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) を確認する。未導入なら Windows x64 向けのランタイムをインストールして再起動する。
-
-Windows の警告が表示された場合は、配布元とファイルが正しいかを確認する。署名済み配布物を保証しておらず、警告の無条件な回避やセキュリティ機能の無効化は推奨しない。
+詳しい手動コマンドと必要環境は [環境構築とビルド](setup.md) を参照。FFmpeg/FFprobe は利用者がインストールしたものを使用する。
 
 ## 2. 最初の動画を作る
 
@@ -109,8 +106,8 @@ MP3 と画像をエクスプローラーからウィンドウへドラッグ＆�
 
 | 症状 | 確認・対処 |
 | --- | --- |
-| アプリが起動しない | Windows x64 か、ZIP をすべて展開したか、WebView2 Runtime が導入されているかを確認する。 |
-| MP3の選択や生成ができない | 画面下部の「実行環境」を開き、FFmpeg と FFprobe の検出状態を確認する。正式 ZIP は3つの exe を同じフォルダに配置し直してアプリを再起動する。開発用 exe 単体は別途ツールが必要。 |
+| アプリが起動しない | Windows x64 か、build.bat が成功したか、WebView2 Runtime が導入されているかを確認する。 |
+| MP3の選択や生成ができない | 画面下部の「実行環境」を開き、FFmpeg と FFprobe の検出状態を確認する。setup.bat を実行し、PATH の反映後にアプリを再起動する。 |
 | MP3を読み込めない | ローカルで再生できる正常な MP3 を選び直す。別形式の拡張子だけを .mp3 に変更しても対応しない。 |
 | 画像を読み込めない | PNG/JPEG/GIF、32 MiB以下、4000万画素以下か確認する。破損・非対応画像は別の画像に置き換える。 |
 | GIFが動かない | 画像配置を「全体表示（余白）」か「画面いっぱい（切り抜き）」にする。 |
@@ -133,7 +130,7 @@ MP3 と画像をエクスプローラーからウィンドウへドラッグ＆�
 - 出力：H.264 / AAC の MP4。出力解像度・FPS・品質は上記の選択肢のみ。
 - 音声の元ファイルや画像を外部に送信しない。アプリは YouTube へのアップロードや投稿を行わない。
 - ブラウザ版、MP4/WebM の入力、WAV/FLAC の入力、複数レイヤー、歌詞表示、一括生成、AIノイズ除去、GPUエンコード、macOS/Linux の正式配布は現時点の MVP 対象外。
-- YouTube での実際の投稿・再生、Windows クリーン環境での配布物起動は初回リリース前の総合確認事項。現時点で確認済みとはしない。
+- YouTube での実際の投稿・再生、Windows クリーン環境でのセットアップ・ビルド・起動は初回リリース前の総合確認事項。現時点で確認済みとはしない。
 - 利用する楽曲や画像は投稿・利用に必要な権利を確認する。
 
-開発者向けの詳細は [MVP仕様](specification.md)、[音声フィルタ処理基盤](audio-filters.md)、[配布パッケージ](windows-package.md) を参照してください。
+開発者向けの詳細は [MVP仕様](specification.md)、[音声フィルタ処理基盤](audio-filters.md)、[環境構築とビルド](setup.md) を参照してください。
