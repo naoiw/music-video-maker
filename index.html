@@ -1,19 +1,54 @@
 <!doctype html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Music Video Maker</title>
-  </head>
-  <body>
-    <main id="app">
-      <header><h1>Music Video Maker</h1><p>楽曲動画生成ツール</p></header>
-      <section aria-labelledby="status-title">
-        <h2 id="status-title">実行環境</h2>
-        <p id="status" role="status">接続を確認しています…</p>
-        <p id="media-status" role="status"></p>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Music Video Maker</title>
+</head>
+<body>
+  <header class="header"><div><span class="eyebrow">MUSIC VIDEO MAKER</span><h1>楽曲動画の作成</h1></div><span id="runtime-status" class="status" role="status">接続確認中</span></header>
+  <main class="workspace">
+    <div class="column">
+      <section class="panel" aria-labelledby="source-title">
+        <h2 id="source-title">素材</h2>
+        <div class="source"><div><h3>音声</h3><p id="audio-name">MP3 · 未選択</p><p id="audio-details"></p><p id="audio-status" role="status"></p></div><button type="button" id="select-audio" disabled>選択</button></div>
+        <div class="source"><div><h3>画像</h3><p id="visual-name">PNG / JPEG / GIF · 未選択</p><p id="visual-details"></p><p id="visual-status" role="status"></p></div><button type="button" id="select-visual" disabled>選択</button></div>
       </section>
-    </main>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+      <section class="panel" aria-labelledby="settings-title">
+        <h2 id="settings-title">出力設定</h2>
+        <fieldset id="output-settings" disabled>
+          <div class="fields"><label>解像度<select id="resolution"><option value="1920x1080">1920 × 1080 (16:9)</option><option value="1080x1080">1080 × 1080 (1:1)</option><option value="1080x1920">1080 × 1920 (9:16)</option></select></label>
+          <label>フレームレート<select id="fps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></label>
+          <label>画像配置<select id="fit"><option value="contain">全体表示（余白）</option><option value="cover">画面いっぱい（切り抜き）</option></select></label>
+          <label>映像品質<select id="quality"><option value="16">高画質 (CRF 16)</option><option value="20" selected>標準 (CRF 20)</option><option value="24">容量優先 (CRF 24)</option></select></label>
+          <label>形式<input value="MP4 · H.264 / AAC" readonly /></label></div>
+        </fieldset>
+      </section>
+      <section class="panel" aria-labelledby="filter-title">
+        <h2 id="filter-title">音声フィルタ</h2>
+        <fieldset disabled class="filters">
+          <label><input type="checkbox" /> ノイズ除去</label>
+          <label><input type="checkbox" /> 周波数調整</label>
+          <label><input type="checkbox" /> 音量調整</label>
+        </fieldset>
+      </section>
+    </div>
+    <div class="column">
+      <section class="panel" aria-labelledby="preview-title">
+        <h2 id="preview-title">プレビュー</h2>
+        <div id="visual-preview" class="preview"><span>画像が選択されていません</span></div>
+        <div class="preview-controls"><button disabled type="button">原音を試聴</button><button disabled type="button">加工後を試聴</button></div>
+      </section>
+      <section class="panel" aria-labelledby="export-title">
+        <h2 id="export-title">動画出力</h2>
+        <div class="source"><div><h3>保存先</h3><p id="output-path">未選択</p></div><button disabled type="button" id="select-output">選択</button></div>
+        <progress id="encode-progress" max="100" value="0" aria-label="エンコード進捗"></progress>
+        <p id="encode-status" class="muted" role="status">素材と保存先を選択してください。</p>
+        <div class="actions"><button type="button" disabled id="cancel-encode">中断</button><button class="primary" type="button" disabled id="start-encode">MP4を生成</button></div>
+      </section>
+    </div>
+  </main>
+  <footer class="footer"><details><summary>実行環境</summary><p id="media-status" role="status">メディア処理環境を確認中</p></details></footer>
+  <script type="module" src="/src/main.ts"></script>
+</body>
 </html>
