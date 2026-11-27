@@ -16,15 +16,25 @@ test("bounds input duration, byte counts and dimensions",()=>{
 });
 test("uses fixed local names, codecs and bounded single-thread command",()=>{
   for(const k of ["png","jpeg","gif"])for(const r of ["1280x720","1920x1080"])for(const f of ["contain","cover"]){
-    const args=encodeArgs(k,r,f);
+    const args=encodeArgs(k,r,f,k==="gif"?[20,20]:[]);
     assert.equal(args.at(-1),"output.mp4");
     assert.ok(args.includes("audio.mp3")&&args.includes("image."+k));
     assert.ok(args.includes("libx264")&&args.includes("aac")&&args.includes("yuv420p")&&args.includes("-shortest"));
     assert.equal(args[args.indexOf("-threads")+1],"1");
     assert.equal(args[args.indexOf("-t")+1],"300");
-    assert.ok(args.includes(k==="gif"?"-stream_loop":"-loop"));
+    const vf=args[args.indexOf("-vf")+1];
+    if(k==="gif"){
+      assert.ok(!args.includes("-stream_loop"));
+      assert.equal(args[args.indexOf("-ignore_loop")+1],"0");
+      assert.ok(!vf.includes("loop=loop=-1"));
+      assert.ok(vf.endsWith(",settb=1/100,setpts='N*20',fps=30"));
+    } else {
+      assert.ok(!args.includes("-loop")&&!args.includes("-stream_loop"));
+      assert.ok(vf.endsWith(",format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(30*TB)"));
+    }
     assert.ok(args[args.indexOf("-vf")+1].includes(f==="contain"?"pad=":"crop="));
   }
+  assert.throws(()=>encodeArgs("gif","1280x720","contain"));
   assert.throws(()=>encodeArgs("http","1280x720","contain"));
   assert.throws(()=>encodeArgs("png","bad","contain"));
   assert.throws(()=>encodeArgs("png","1280x720","bad"));

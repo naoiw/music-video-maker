@@ -9,7 +9,7 @@
 | core 0.12.10のnpm tarball整合性・CDN実バイト照合 | CI成功、固定ハッシュ記録済み |
 | 公開物へのcore JS/WASM混入防止 | CI成功 |
 | 720p短尺・MP4生成 | PNG/JPEG/GIFでCI成功 |
-| 長尺1080p・中断再試行 | ベンチマーク追加、結果待ち |
+| 長尺1080p・中断再試行 | PR #78 / main CI 成功。静止画最適化後の再測定待ち |
 | 実楽曲・ユーザーPC | 未確認 |
 | 対応ソース・ライセンスと結合形態 | 未確定 |
 | H.264/AACの特許 | 未確定 |
@@ -22,6 +22,13 @@
 - 正確な対応ソース（FFmpeg本体、依存ライブラリ、パッチ、ビルドレシピ、版/コミットの対応）、必要な著作権・ライセンス表示、結合形態と配布条件の確認が未完了。現時点の上流mainのリンクだけでは正確な対応ソースの確認にならない。
 - H.264/AACの特許は著作権ライセンスとは別。FFmpeg公式Legalページも管轄地域・利用形態によることを説明しており、無償サービスであることのみで免除と判断しない。
 - jsDelivrの利用条件・プライバシーポリシーも適用される。素材・生成物は送信しない設計でもCDNへのアクセス時に通常のネットワーク情報が渡る。固定版・ハッシュ照合、CSPは安全性対策の一部であり、既知脆弱性がないことの保証ではない。
+
+## 上流ソース・安全性の追加調査
+
+- [v12.15 の core package.json](https://github.com/ffmpegwasm/ffmpeg.wasm/blob/71aa99d37c02a7b4c435275ca9ef50e612f6efa1/packages/core/package.json) は @ffmpeg/core 0.12.10 / GPL-2.0-or-later と一致する。[同コミットの Dockerfile](https://github.com/ffmpegwasm/ffmpeg.wasm/blob/71aa99d37c02a7b4c435275ca9ef50e612f6efa1/Dockerfile) は Emscripten 3.1.40、FFmpeg n5.1.4、--enable-gpl、libx264/libx265 等を指定する。[ビルドスクリプト](https://github.com/ffmpegwasm/ffmpeg.wasm/tree/71aa99d37c02a7b4c435275ca9ef50e612f6efa1/build) と src/bind / src/fftools も対応候補。
+- ただし x264 の4-cores、LAME のmasterなど可変ブランチ参照があり、公開npmバイナリとすべての依存ソースの厳密な対応は未立証。対応ソースの再現性を保証したとは扱わない。
+- [FFmpeg Security](https://ffmpeg.org/security.html) では5.1.5〜5.1.7で複数の脆弱性修正を列挙している。n5.1.4ベースの候補コアについて、修正の取り込み・使用するデコーダへの影響を確認するまで公開承認しない。ハッシュ固定、ブラウザサンドボックス、プロトコル制限だけで安全とは判断しない。新しいメンテナンス済みコアを利用できない場合は、WebCodecs等を検討する。
+- [FFmpeg Legal](https://ffmpeg.org/legal.html) はGPL有効時のライセンスと、配布バイナリに対応する正確なソースの重要性を説明している。現在の外部直接取得方式についても公開前に適合性を確認する必要がある。
 
 ## 公開までの判断
 

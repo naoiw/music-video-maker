@@ -1,3 +1,5 @@
+import { gifTimelineFilter } from "./gif-loop.ts";
+
 export const LIMITS = { audioBytes: 50 * 1024 * 1024, imageBytes: 32 * 1024 * 1024, pixels: 40_000_000, seconds: 300 } as const;
 export type ImageKind = "png" | "jpeg" | "gif";
 export type Fit = "contain" | "cover";
@@ -16,18 +18,21 @@ export function assertInputs(audio: {name: string; size: number}, visual: {size:
   if (!Number.isFinite(duration) || duration <= 0 || duration > LIMITS.seconds) throw new Error("音声の長さは5分以下にしてください。");
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width * height > LIMITS.pixels) throw new Error("画像は4000万画素以下にしてください。");
 }
-export function encodeArgs(kind: ImageKind, resolution: Resolution, fit: Fit): string[] {
+export function encodeArgs(kind: ImageKind, resolution: Resolution, fit: Fit, gifDelays: readonly number[] = []): string[] {
   if (!["png","jpeg","gif"].includes(kind)) throw new Error("Invalid image format");
   if (resolution !== "1280x720" && resolution !== "1920x1080") throw new Error("Invalid resolution");
   if (fit !== "contain" && fit !== "cover") throw new Error("Invalid image fit");
   const [w,h] = resolution.split("x");
   const image = "image." + kind;
-  const vf = fit === "contain"
+  const layout = fit === "contain"
     ? "scale=" + w + ":" + h + ":force_original_aspect_ratio=decrease:force_divisible_by=2,pad=" + w + ":" + h + ":(ow-iw)/2:(oh-ih)/2:black,setsar=1"
     : "scale=" + w + ":" + h + ":force_original_aspect_ratio=increase:force_divisible_by=2,crop=" + w + ":" + h + ",setsar=1";
   const visual = kind === "gif"
-    ? ["-stream_loop","-1","-ignore_loop","1","-f","gif"]
-    : ["-loop","1","-framerate","30","-f","image2"];
+    ? ["-ignore_loop","0","-f","gif"]
+    : ["-framerate","30","-f","image2"];
+  // Decode and resize a still once, then loop only the converted output frame.
+  // GIF must retain its original sequence and timing; never use the still-frame loop.
+  const vf = kind === "gif" ? layout + "," + gifTimelineFilter(gifDelays) : layout + ",format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(30*TB)";
   return ["-protocol_whitelist","file,pipe", ...visual,"-i",image,
     "-protocol_whitelist","file,pipe","-f","mp3","-i","audio.mp3",
     "-map","0:v:0","-map","1:a:0","-vf",vf,"-r","30","-c:v","libx264",
