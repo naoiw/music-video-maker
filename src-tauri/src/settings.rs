@@ -4,25 +4,43 @@ use std::path::Path;
 
 const FILE_NAME: &str = "settings.json";
 const MAX_BYTES: u64 = 16 * 1024;
+const PRESET_FILE_NAME: &str = "presets.json";
+const PRESET_MAX_BYTES: u64 = 64 * 1024;
 
 pub fn read(dir: &Path) -> Result<Option<String>, String> {
-    let file = match File::open(dir.join(FILE_NAME)) {
+    read_json(dir, FILE_NAME, MAX_BYTES)
+}
+
+pub fn read_presets(dir: &Path) -> Result<Option<String>, String> {
+    read_json(dir, PRESET_FILE_NAME, PRESET_MAX_BYTES)
+}
+
+fn read_json(dir: &Path, file_name: &str, max_bytes: u64) -> Result<Option<String>, String> {
+    let file = match File::open(dir.join(file_name)) {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.to_string()),
     };
     let mut json = String::new();
-    file.take(MAX_BYTES + 1)
+    file.take(max_bytes + 1)
         .read_to_string(&mut json)
         .map_err(|error| error.to_string())?;
-    if json.len() as u64 > MAX_BYTES {
+    if json.len() as u64 > max_bytes {
         return Err("設定ファイルが大きすぎます。".into());
     }
     Ok(Some(json))
 }
 
 pub fn write(dir: &Path, json: &str) -> Result<(), String> {
-    if json.len() as u64 > MAX_BYTES {
+    write_json(dir, FILE_NAME, MAX_BYTES, json)
+}
+
+pub fn write_presets(dir: &Path, json: &str) -> Result<(), String> {
+    write_json(dir, PRESET_FILE_NAME, PRESET_MAX_BYTES, json)
+}
+
+fn write_json(dir: &Path, file_name: &str, max_bytes: u64, json: &str) -> Result<(), String> {
+    if json.len() as u64 > max_bytes {
         return Err("設定ファイルが大きすぎます。".into());
     }
     let value: serde_json::Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
@@ -40,7 +58,7 @@ pub fn write(dir: &Path, json: &str) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     // Replace only after the complete new file has been written successfully.
     temporary
-        .persist(dir.join(FILE_NAME))
+        .persist(dir.join(file_name))
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -73,6 +91,30 @@ mod tests {
         assert!(write(dir, "[]").is_err());
         assert!(write(dir, &" ".repeat(MAX_BYTES as usize + 1)).is_err());
         assert_eq!(read(dir).unwrap().as_deref(), Some(valid));
+    }
+
+    #[test]
+    fn presets_are_independent_and_invalid_writes_preserve_them() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path();
+        let settings_json = r#"{"version":1,"values":{}}"#;
+        let presets_json = r#"{"version":1,"presets":[]}"#;
+        let updated = r#"{"version":1,"presets":[{"name":"Test"}]}"#;
+        write(dir, settings_json).unwrap();
+        assert_eq!(read_presets(dir).unwrap(), None);
+        write_presets(dir, presets_json).unwrap();
+        write_presets(dir, updated).unwrap();
+        assert!(write_presets(dir, "{").is_err());
+        assert!(write_presets(dir, &" ".repeat(PRESET_MAX_BYTES as usize + 1)).is_err());
+        assert_eq!(read_presets(dir).unwrap().as_deref(), Some(updated));
+        assert_eq!(read(dir).unwrap().as_deref(), Some(settings_json));
+        fs::write(
+            dir.join(PRESET_FILE_NAME),
+            vec![b'a'; PRESET_MAX_BYTES as usize + 1],
+        )
+        .unwrap();
+        assert!(read_presets(dir).is_err());
+        assert_eq!(read(dir).unwrap().as_deref(), Some(settings_json));
     }
 
     #[test]

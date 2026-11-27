@@ -148,6 +148,24 @@ fn write_settings(app: tauri::AppHandle, json: String) -> Result<(), String> {
     settings::write(&dir, &json)
 }
 
+#[tauri::command]
+fn read_presets(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?;
+    settings::read_presets(&dir)
+}
+
+#[tauri::command]
+fn write_presets(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?;
+    settings::write_presets(&dir, &json)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -162,7 +180,9 @@ pub fn run() {
             encode_progress,
             cancel_encode,
             read_settings,
-            write_settings
+            write_settings,
+            read_presets,
+            write_presets
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Music Video Maker");

@@ -3,6 +3,7 @@ import {
   defaultSettings, isSettingId, parseSettings, settingsFields, settingsIds,
   validateSettings, type SettingId, type SettingsValues,
 } from "../services/settings-schema";
+import { filterIds, validateFilterSettings, type FilterSettings } from "../services/preset-schema";
 import { createSettingsWriter, type SaveState } from "../services/settings-writer";
 
 function control(id: SettingId): HTMLInputElement | HTMLSelectElement {
@@ -13,8 +14,8 @@ function control(id: SettingId): HTMLInputElement | HTMLSelectElement {
   return node;
 }
 
-function apply(values: SettingsValues): void {
-  for (const id of settingsIds) {
+function apply(values: SettingsValues, ids: readonly SettingId[] = settingsIds): void {
+  for (const id of ids) {
     const node = control(id);
     const value = values[id];
     if (node instanceof HTMLInputElement && settingsFields[id].kind === "boolean") {
@@ -25,8 +26,8 @@ function apply(values: SettingsValues): void {
   }
 }
 
-function snapshot(): SettingsValues | null {
-  const values = Object.fromEntries(settingsIds.map(id => {
+function readValues(ids: readonly SettingId[]): Record<string, unknown> {
+  return Object.fromEntries(ids.map(id => {
     const node = control(id);
     const field = settingsFields[id];
     if (node instanceof HTMLInputElement) {
@@ -35,7 +36,14 @@ function snapshot(): SettingsValues | null {
     }
     return [id, node.value];
   }));
-  return validateSettings(values);
+}
+
+function snapshot(): SettingsValues | null {
+  return validateSettings(readValues(settingsIds));
+}
+
+export function snapshotFilterSettings(): FilterSettings | null {
+  return validateFilterSettings(readValues(filterIds));
 }
 
 function status(): HTMLElement {
@@ -65,7 +73,7 @@ export async function restoreSettings(): Promise<SettingsValues | null> {
 export function initializeSettingsPersistence(
   initial: SettingsValues | null,
   refreshFilters: () => void,
-): void {
+): (values: FilterSettings) => void {
   const reset = document.querySelector<HTMLButtonElement>("#settings-reset");
   const filterPanel = document.getElementById("filter-title")?.parentElement;
   if (!reset || !filterPanel) throw new Error("Missing settings elements");
@@ -100,13 +108,20 @@ export function initializeSettingsPersistence(
       persist();
     }
   });
-  reset.addEventListener("click", () => {
-    if (reset.disabled) return;
-    apply(defaultSettings());
+  function refreshAndPersist(): void {
     refreshFilters();
     // Existing preview/export listeners invalidate cached audio and update the output.
     // Do not dispatch individual checkbox changes (they would auto-enable the limiter).
     filterPanel.dispatchEvent(new Event("input", { bubbles: true }));
     persist();
+  }
+  reset.addEventListener("click", () => {
+    if (reset.disabled) return;
+    apply(defaultSettings());
+    refreshAndPersist();
   });
+  return values => {
+    apply({ ...defaultSettings(), ...values }, filterIds);
+    refreshAndPersist();
+  };
 }

@@ -7,3 +7,11 @@ export function readSavedSettings(): Promise<string | null> {
 export function writeSavedSettings(json: string): Promise<void> {
   return invoke<void>("write_settings", { json });
 }
+
+export function readSavedPresets(): Promise<string | null> {
+  return invoke<string | null>("read_presets");
+}
+
+export function writeSavedPresets(json: string): Promise<void> {
+  return invoke<void>("write_presets", { json });
+}
