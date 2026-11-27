@@ -8,12 +8,25 @@ MP3 と画像を合成し、音声フィルタで音質を調整して YouTube �
 
 1. GitHub の **Code → Download ZIP** でソースを取得し、すべて展開します（git clone でも可）。
 2. `setup.bat` をダブルクリックします。不足している Node.js 26、C++ Build Tools、Rust、FFmpeg/FFprobe、WebView2 を WinGet 等で導入します。初回はネット接続が必要で、インストーラーや UAC の確認が出る場合があります。
-3. セットアップ完了後、必要に応じて Windows を再起動し、`build.bat` をダブルクリックします。
+3. セットアップ完了後、必要に応じて Windows を再起動し、リポジトリルートで PowerShell を開いて以下を実行します。
+```powershell
+# pnpm が未導入の場合のみ（Node.js 付属の npm で導入）
+npm install --global pnpm@10
+pnpm --version
+
+# リポジトリルートで実行
+pnpm install --frozen-lockfile
+if ($LASTEXITCODE -ne 0) { throw 'pnpm install failed' }
+.\build.bat --pnpm --skip-install
+```
+
 4. `src-tauri/target/release/music-video-maker.exe` をダブルクリックして起動します。
 
 以降は exe から GUI を使用できます。ソースを更新した場合は再ビルドしてください。FFmpeg/FFprobe は PATH 上に必要です。
 
-詳細な PowerShell 手順、pnpm の利用、エラー時の対処は [環境構築とビルド](docs/setup.md) を参照してください。
+依存管理は pnpm を標準とし、コミット済みの `pnpm-lock.yaml` と `src-tauri/Cargo.lock` を使用します。現行の build.bat は引数なしでは npm を使用するため、上記では pnpm を明示します。
+
+詳細な PowerShell 手順、エラー時の対処は [環境構築とビルド](docs/setup.md) を参照してください。
 
 ## 使い方
 
@@ -37,7 +50,7 @@ MP3 と画像を合成し、音声フィルタで音質を調整して YouTube �
 
 ## 開発
 
-Rust / Tauri / TypeScript / FFmpeg を使用しています。
+Rust / Tauri / TypeScript / Vite / pnpm / FFmpeg を使用しています。
 
 - [MVP仕様](docs/specification.md)
 - [システム構成](docs/architecture.md)
