@@ -55,17 +55,25 @@ function json(path) {
   return JSON.parse(readFileSync(join(root, path), 'utf8'));
 }
 
-async function main() {
-  const [tag, output, ...rest] = process.argv.slice(2);
-  if (!tag || !output || rest.length) {
-    throw new Error('Usage: node scripts/release-inputs.mjs <tag> <new-input-directory>');
-  }
+export function repositoryVersions() {
   const cargo = readFileSync(join(root, 'src-tauri', 'Cargo.toml'), 'utf8');
   const packageSection = cargo.split(/^\[package\]\s*$/m)[1]?.split(/^\[/m)[0];
   // Cargo version is currently a literal in the package section.
   const cargoVersion = packageSection?.match(/^version\s*=\s*"([^"]+)"\s*$/m)?.[1];
-  assertReleaseVersion(tag, [json('package.json').version, cargoVersion, json('src-tauri/tauri.conf.json').version]);
+  return [json('package.json').version, cargoVersion, json('src-tauri/tauri.conf.json').version];
+}
+
+async function main() {
+  const [tag, output, ...rest] = process.argv.slice(2);
+  if (!tag || !output || rest.length) {
+    throw new Error('Usage: node scripts/release-inputs.mjs <tag> <new-input-directory | --check>');
+  }
+  assertReleaseVersion(tag, repositoryVersions());
   const inputs = releaseInputs(json('packaging/ffmpeg-lock.json'));
+  if (output === '--check') {
+    console.log('Release version and approved input metadata are valid; no downloads performed.');
+    return;
+  }
   const directory = resolve(output);
   mkdirSync(directory);
   try {

@@ -40,6 +40,7 @@ Rust / Tauri / TypeScript / FFmpeg を使用しています。
 - [テスト・検証](docs/testing.md)
 - [Windows 配布パッケージ](docs/windows-package.md)
 - [リリース手順](docs/release.md)
+- [MVP総合検証](docs/mvp-validation.md)
 - [Issues](https://github.com/naoiw/music-video-maker/issues)
 
 ## License
