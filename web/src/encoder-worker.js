@@ -12,11 +12,61 @@ async function verified(name, expected, mime, maxBytes) {
   if (digest !== expected) throw new Error("Engine integrity mismatch: " + name);
   return URL.createObjectURL(new Blob([data], {type:mime}));
 }
+function probe(core, file, format, entries) {
+  // core 0.12.10's ffprobe() wrapper returns Module.ret, initially -1.
+  // Its C entry point returns normally instead of setting Module.ret via
+  // exit_program(). Read the actual C return value, not the wrapper sentinel.
+  // See upstream v12.15 src/bind/ffmpeg/bind.js and src/fftools/ffprobe.c.
+  const argv=["./ffprobe","-v","error","-protocol_whitelist","file,pipe","-f",format,
+    "-show_entries",entries,"-of","json","-o","probe.json",file];
+  let result;
+  try {
+    result=core._ffprobe(argv.length,core.stringsToPtr(argv));
+  } finally {
+    core.reset();
+  }
+  if (result !== 0) throw new Error("FFprobe exit code "+result+" ("+file+")");
+  const info = JSON.parse(core.FS.readFile("probe.json",{encoding:"utf8"}));
+  core.FS.unlink("probe.json");
+  return info;
+}
+function audioInfo(core,file,format) {
+  const info = probe(core,file,format,"stream=codec_type,sample_rate,channels:format=duration");
+  const stream = info.streams?.find(s=>s.codec_type==="audio");
+  const sampleRate = Number(stream?.sample_rate), channels = Number(stream?.channels), duration = Number(info.format?.duration);
+  if (!Number.isInteger(sampleRate)||sampleRate<8000||sampleRate>48000||![1,2].includes(channels)||
+      !Number.isFinite(duration)||duration<=0||duration>300.2)
+    throw new Error("非対応の音声情報です（8～48kHz、モノラル/ステレオ、5分以下）。");
+  return {sampleRate,channels,duration};
+}
+function requestGraph(sampleRate) {
+  return new Promise((resolve,reject)=>{
+    self.onmessage=({data})=>{
+      self.onmessage=null;
+      if(data?.type!=="filterGraph"||typeof data.graph!=="string"||!data.graph.length||data.graph.length>2048)
+        reject(new Error("Invalid audio filter plan"));
+      else resolve(data.graph);
+    };
+    notify("probe",{sampleRate});
+  });
+}
+function filteredVideoArgs(args,duration) {
+  const updated=[...args];
+  const input=updated.indexOf("audio.mp3"),limit=updated.indexOf("-t"),shortest=updated.indexOf("-shortest");
+  if(input<3||updated[input-1]!=="-i"||updated[input-2]!=="mp3"||updated[input-3]!=="-f"||limit<0||shortest<0)
+    throw new Error("Invalid video plan");
+  updated[input-2]="wav";
+  updated[input]="filtered.wav";
+  updated[limit+1]=duration.toFixed(6);
+  updated.splice(shortest,1);
+  return updated;
+}
 self.onmessage = async ({data}) => {
   self.onmessage = null; // one job per worker; terminate releases WASM and its virtual FS
   let jsURL, wasmURL;
   try {
-    const {manifest, audio, visual, kind, args, duration} = data;
+    const {manifest, audio, visual, kind, args, duration, useFilters} = data;
+    let videoArgs=args, mediaDuration=duration, filtering=false;
     if (manifest.version !== "0.12.10") throw new Error("Unsupported engine version");
     notify("status",{message:"処理エンジンを取得・検証中…"});
     jsURL = await verified("ffmpeg-core.js",manifest.coreJsSha256,"text/javascript",2*1024*1024);
@@ -27,15 +77,50 @@ self.onmessage = async ({data}) => {
     });
     core.setLogger(({message}) => notify("log",{message:String(message).slice(0,500)}));
     core.setProgress(({time}) => {
-      if (Number.isFinite(time) && duration > 0) notify("progress",{value:Math.max(0,Math.min(99,100*time/1e6/duration))});
+      if (Number.isFinite(time) && mediaDuration > 0) {
+        const fraction=Math.max(0,Math.min(1,time/1e6/mediaDuration));
+        const value=useFilters?(filtering?20*fraction:20+79*fraction):99*fraction;
+        notify("progress",{value});
+      }
     });
     core.FS.writeFile("audio.mp3",new Uint8Array(audio));
+    const started = performance.now();
+    if(useFilters){
+      notify("status",{message:"音声情報を検証中…"});
+      const source=audioInfo(core,"audio.mp3","mp3");
+      const graph=await requestGraph(source.sampleRate);
+      filtering=true;
+      mediaDuration=source.duration;
+      notify("status",{message:"音声フィルタを適用中…"});
+      const result=core.exec("-protocol_whitelist","file,pipe","-f","mp3","-i","audio.mp3","-map","0:a:0","-vn",
+        "-af",graph,"-c:a","pcm_f32le","-t","300","-f","wav","filtered.wav");
+      core.reset();
+      if(result!==0)throw new Error("音声フィルタ処理に失敗しました: FFmpeg exit code "+result);
+      const processed=audioInfo(core,"filtered.wav","wav");
+      if(processed.sampleRate!==source.sampleRate||processed.channels!==source.channels||
+         processed.duration>300||Math.abs(processed.duration-source.duration)>0.2)
+        throw new Error("加工音の形式または再生時間が元音声と一致しません。");
+      core.FS.unlink("audio.mp3");
+      videoArgs=filteredVideoArgs(args,processed.duration);
+      mediaDuration=processed.duration;
+      filtering=false;
+      notify("progress",{value:20});
+    }
     core.FS.writeFile("image."+kind,new Uint8Array(visual));
     notify("status",{message:"動画を生成中…"});
-    const started = performance.now();
-    const result = core.exec(...args);
+    const result = core.exec(...videoArgs);
     core.reset();
     if (result !== 0) throw new Error("FFmpeg exit code " + result);
+    if(useFilters){
+      notify("status",{message:"出力時間を検証中…"});
+      const info=probe(core,"output.mp4","mov","stream=codec_type,duration:format=duration");
+      const v=Number(info.streams?.find(s=>s.codec_type==="video")?.duration);
+      const a=Number(info.streams?.find(s=>s.codec_type==="audio")?.duration);
+      const total=Number(info.format?.duration);
+      if([v,a,total].some(t=>!Number.isFinite(t)||t<=0||Math.abs(t-mediaDuration)>0.2)||Math.abs(v-a)>0.2)
+        throw new Error("生成動画の映像と音声の長さが一致しません。");
+      core.FS.unlink("filtered.wav");
+    }
     const output = core.FS.readFile("output.mp4");
     if (!output.byteLength) throw new Error("FFmpeg returned empty output");
     const bytes = output.slice().buffer;
