@@ -1,5 +1,6 @@
 import "./styles.css";
-import workerSource from "./encoder-worker.js?raw";
+import { createBrowserEngineSession } from "./engine-client";
+import { errorMessage, type EngineSession } from "./engine-session";
 import { initializeAudioPreview } from "./audio-preview";
 import { createWebStore, defaultWebSettings } from "./settings-storage";
 import { initializeWebPresets } from "./presets";
@@ -7,7 +8,6 @@ import { filterIds } from "../../src/services/preset-schema";
 import type { SettingsValues } from "../../src/services/settings-schema";
 import { prepareLoopingGif } from "./gif-loop";
 import { inspectImageDimensions, assertImageDimensions } from "./image-dimensions";
-import { activeFilterNames, compileWebAudioFilters } from "./audio-filter-plan";
 import { initializeWebAudioFilters } from "./audio-filter-panel";
 import { settingsFields } from "../../src/services/settings-schema";
 import { assertInputs, encodeArgs, imageKind, LIMITS, browserOutputDefaults, browserResolutions, type Resolution, type Fit } from "./encode-plan";
@@ -37,7 +37,7 @@ const output = get<HTMLVideoElement>("output");
 const download = get<HTMLAnchorElement>("download");
 let busy = false;
 let sequence = 0;
-let worker: Worker | null = null;
+let engine: EngineSession | null = null;
 let imageURL = "";
 let visualRevision = 0;
 let validatedVisual: File | null = null;
@@ -69,7 +69,7 @@ function clearOutput() {
 }
 function stop() {
   sequence++;
-  worker?.terminate(); worker = null; busy = false; refresh();
+  engine?.dispose(); engine = null; busy = false; refresh();
 }
 function fail(message: string) {
   stop(); progress.value = 0; setStatus(message,"error");
@@ -218,13 +218,8 @@ encode.addEventListener("click", async () => {
     if (!/\.mp3$/i.test(a.name) || a.size <= 0 || a.size > LIMITS.audioBytes || v.size <= 0 || v.size > LIMITS.imageBytes)
       throw new Error("MP3は50 MiB、画像は32 MiB以下にしてください。");
     const filterSettings = filters.values();
-    const useFilters = activeFilterNames(filterSettings).length > 0;
     const duration = await metadataDuration(a);
     if (job !== sequence) return;
-    const manifestURL = new URL(import.meta.env.BASE_URL + "core-manifest.json",location.origin);
-    const response = await fetch(manifestURL,{cache:"no-store",credentials:"same-origin"});
-    if (!response.ok) throw new Error("処理エンジンの検証情報がありません。web:prepareを実行してください。");
-    const manifest: unknown = await response.json();
     const [audioBytes,originalVisualBytes] = await Promise.all([a.arrayBuffer(),v.arrayBuffer()]);
     if (job !== sequence) return;
     const visualData = new Uint8Array(originalVisualBytes);
@@ -235,34 +230,28 @@ encode.addEventListener("click", async () => {
     const visualBytes = preparedGif?.bytes.buffer ?? originalVisualBytes;
     const args = encodeArgs(kind,resolution.value as Resolution,fit.value as Fit,preparedGif?.frameDelays,Number(fps.value),Number(quality.value));
     if (job !== sequence) return;
-    const workerURL = URL.createObjectURL(new Blob([workerSource],{type:"text/javascript"}));
-    try { worker = new Worker(workerURL); } finally { URL.revokeObjectURL(workerURL); }
-    worker.onerror = (event) => { if (job === sequence) fail(event.message || "Workerの実行に失敗しました。"); };
-    worker.onmessage = ({data}) => {
-      if (job !== sequence) return;
-      if (data.type === "probe") {
-        try {
-          const graph = compileWebAudioFilters(filterSettings, Number(data.sampleRate));
-          if (!graph || !worker) throw new Error("音声フィルタの設定を取得できません。");
-          worker.postMessage({type:"filterGraph",graph});
-        } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
-      }
-      if (data.type === "status") setStatus(data.message);
-      if (data.type === "progress") progress.value = data.value;
-      if (data.type === "log") { lines.push(data.message); if (lines.length > 30) lines.shift(); log.textContent = lines.join("\n"); }
-      if (data.type === "error") fail(data.message);
-      if (data.type === "done") {
-        outputURL = URL.createObjectURL(new Blob([data.bytes],{type:"video/mp4"}));
+    const current = createBrowserEngineSession();
+    engine = current;
+    await current.run({type:"encode",audio:audioBytes,visual:visualBytes,kind,args,duration,settings:filterSettings},{
+      status: message => { if (job === sequence) setStatus(message); },
+      progress: value => { if (job === sequence) progress.value = value; },
+      log: message => {
+        if (job !== sequence) return;
+        lines.push(message); if (lines.length > 30) lines.shift(); log.textContent = lines.join("\n");
+      },
+      error: message => { if (job === sequence) fail(message); },
+      done: result => {
+        if (job !== sequence || result.type !== "done") return;
+        outputURL = URL.createObjectURL(new Blob([result.bytes],{type:"video/mp4"}));
         output.src = outputURL; output.hidden = false;
         download.href = outputURL; download.hidden = false;
         download.download = a.name.replace(/\.mp3$/i,"") + ".mp4";
         stop(); progress.value = 100;
-        setStatus("生成完了（エンコード " + Number(data.encodeSeconds).toFixed(1) + " 秒）","done");
-      }
-    };
-    worker.postMessage({manifest,audio:audioBytes,visual:visualBytes,kind,args,duration,useFilters},[audioBytes,visualBytes]);
+        setStatus("生成完了（エンコード " + result.encodeSeconds.toFixed(1) + " 秒）","done");
+      },
+    });
   } catch (error) {
-    if (job === sequence) fail(error instanceof Error ? error.message : String(error));
+    if (job === sequence) fail(errorMessage(error));
   }
 });
 window.addEventListener("pagehide", () => {

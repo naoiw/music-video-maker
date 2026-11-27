@@ -65,6 +65,7 @@ self.onmessage = async ({data}) => {
   self.onmessage = null; // one job per worker; terminate releases WASM and its virtual FS
   let jsURL, wasmURL;
   try {
+    if (data?.type !== "preview" && data?.type !== "encode") throw new Error("Unsupported engine job");
     const {manifest, audio, visual, kind, args, duration, useFilters, previewStart} = data;
     let videoArgs=args, mediaDuration=duration, filtering=false;
     if (manifest.version !== "0.12.10") throw new Error("Unsupported engine version");
