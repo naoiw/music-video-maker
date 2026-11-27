@@ -12,7 +12,7 @@
 | 長尺1080p・中断再試行 | PR #82 / main CI 成功（180秒PNG contain 92.4秒・blurred 93.6秒、295秒JPEG contain 145.9秒。合成素材） |
 | 画像ヘッダー・GIFフレーム寸法のデコード前検査 | PR #87 CI成功 |
 | 設定保存・プリセット・試聴 | PR #86 / #87 CI成功 |
-| 素材・生成物の外部非送信 | ページ/Worker通信監査を追加、CI確認待ち |
+| 素材・生成物の外部非送信 | PR #88 CI成功（短尺20・長尺4 Worker、想定外通信0件） |
 | 実楽曲・ユーザーPC | 未確認 |
 | 対応ソース・ライセンスと結合形態 | 未確定 |
 | H.264/AACの特許 | 未確定 |
@@ -43,7 +43,7 @@
 
 Chrome DevTools Protocolでページと専用Workerを監査する。Workerは自動アタッチ時に一時停止し、Network.enable後に実行を再開する。監査は初回ナビゲーション前から素材選択・試聴・設定保存・生成・Blob取得・中断/再実行まで継続する。web:smokeとweb:benchmarkの双方で、公開成果物の実ファイル、ブラウザのfavicon、固定版core JS/WASMの完全一致URLへの本文なしGETのみ許可する。Blob/dataはローカル読み取りとして別集計。未知URL、本文付きリクエスト、GET以外、リダイレクト、WebSocket/WebTransport等を検出した場合はCIを失敗させる。マニフェストと同じWorker内で両core取得を観測できない場合も失敗とする。合成素材のみで試験し、Summaryに件数を記録する（URLのクエリ、本文、ファイル名、素材は記録しない）。referrer policyはno-referrerとする。既存のcore取得ハッシュ・CSP・公開承認条件を維持する。
 
-対象は観測されたアプリページ・専用Workerの通信であり、ブラウザ/OS全体のパケットキャプチャや任意のサイドチャネルの排除ではない。CDN・ホスティングには通常の接続情報が渡る。実Chrome/WASMでの監査結果と公開URLは未確認。単体テストで正例、未知URL、本文、リダイレクト、別通信チャネル、監査証拠欠落を検証する。
+対象は観測されたアプリページ・専用Workerの通信であり、ブラウザ/OS全体のパケットキャプチャや任意のサイドチャネルの排除ではない。CDN・ホスティングには通常の接続情報が渡る。[PR #88 CI](https://github.com/naoiw/music-video-maker/actions/runs/46068161850) で短尺: サイトGET49、core GET40、manifest GET21、ローカル読み取り200、20 Workerすべて両core取得、想定外0。長尺: サイトGET8、core GET8、manifest GET4、ローカル読み取り88、4 Workerすべて両core取得、想定外0。公開URL・実楽曲は未確認。単体テストで正例、未知URL、本文、リダイレクト、別通信チャネル、監査証拠欠落を検証する。
 
 ## 公開までの判断
 

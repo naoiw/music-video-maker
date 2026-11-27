@@ -1,5 +1,5 @@
-import workerSource from "./encoder-worker.js?raw";
-import { activeFilterNames, compileWebAudioFilters } from "./audio-filter-plan";
+import { createBrowserEngineSession } from "./engine-client";
+import { errorMessage, type EngineSession } from "./engine-session";
 import { LIMITS } from "./encode-plan";
 import type { FilterSettings } from "../../src/services/preset-schema";
 
@@ -28,8 +28,7 @@ export function initializeAudioPreview(deps: Dependencies) {
   const status=get<HTMLElement>("audio-preview-status");
   const cache=new Map<Mode,string>();
   let generation=0, sourceRevision=0, duration=0, busy=false, exportBusy=false;
-  let worker:Worker|null=null, mode:Mode|null=null;
-  let pendingFetch:AbortController|null=null;
+  let engine:EngineSession|null=null, mode:Mode|null=null;
   function setStatus(message:string,state="idle") {
     status.textContent=message;
     status.dataset.state=state;
@@ -46,8 +45,7 @@ export function initializeAudioPreview(deps: Dependencies) {
   }
   function stopJob() {
     generation++;
-    pendingFetch?.abort(); pendingFetch=null;
-    worker?.terminate(); worker=null;
+    engine?.dispose(); engine=null;
     busy=false;
   }
   function invalidate(message:string) {
@@ -115,43 +113,23 @@ export function initializeAudioPreview(deps: Dependencies) {
       const cached=cache.get(next);
       if(cached){show(next,cached,position,current);return;}
       const settings=next==="processed"?deps.values():null;
-      const useFilters=settings!==null&&activeFilterNames(settings).length>0;
       const offset=start.valueAsNumber;
-      const controller=new AbortController(); pendingFetch=controller;
-      const response=await fetch(new URL(import.meta.env.BASE_URL+"core-manifest.json",location.origin),
-        {cache:"no-store",credentials:"same-origin",signal:controller.signal});
-      if(!response.ok)throw new Error("処理エンジンの検証情報がありません。");
-      const manifest:unknown=await response.json();
       const audio=await file.arrayBuffer();
       if(current!==generation)return;
-      pendingFetch=null;
-      const url=URL.createObjectURL(new Blob([workerSource],{type:"text/javascript"}));
-      try { worker=new Worker(url); } finally { URL.revokeObjectURL(url); }
-      worker.onerror=event=>fail(current,event.message||"試聴Workerの実行に失敗しました。");
-      worker.onmessage=({data})=>{
-        if(current!==generation)return;
-        if(data.type==="status")setStatus(data.message,"busy");
-        if(data.type==="probe"){
-          try{
-            const graph=settings&&compileWebAudioFilters(settings,Number(data.sampleRate));
-            if(!graph||!worker)throw new Error("音声フィルタの設定を取得できません。");
-            worker.postMessage({type:"filterGraph",graph});
-          }catch(error){fail(current,error instanceof Error?error.message:String(error));}
-        }
-        if(data.type==="error")fail(current,data.message);
-        if(data.type==="previewDone"){
-          worker?.terminate();worker=null;
-          const bytes=data.bytes;
-          if(!(bytes instanceof ArrayBuffer)||bytes.byteLength<=44||bytes.byteLength>6*1024*1024){
-            fail(current,"試聴データのサイズが無効です。");return;
-          }
-          const wav=URL.createObjectURL(new Blob([bytes],{type:"audio/wav"}));
+      const session=createBrowserEngineSession();
+      engine=session;
+      await session.run({type:"preview",audio,duration,settings,previewStart:offset},{
+        status: message=>{if(current===generation)setStatus(message,"busy");},
+        error: message=>fail(current,message),
+        done: result=>{
+          if(current!==generation||result.type!=="previewDone")return;
+          engine=null;
+          const wav=URL.createObjectURL(new Blob([result.bytes],{type:"audio/wav"}));
           cache.set(next,wav);
           show(next,wav,position,current);
-        }
-      };
-      worker.postMessage({type:"preview",manifest,audio,duration,useFilters,previewStart:offset},[audio]);
-    }catch(error){fail(current,error instanceof Error?error.message:String(error));}
+        },
+      });
+    }catch(error){fail(current,errorMessage(error));}
   }
   start.addEventListener("input",()=>invalidate("試聴区間を変更しました。"));
   original.addEventListener("click",()=>{void play("original");});
