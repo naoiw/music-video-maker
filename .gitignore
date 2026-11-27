@@ -11,3 +11,6 @@ Thumbs.db
 !/src-tauri/binaries/.gitkeep
 /local-media/
 /output/
+
+# Tauri generated schemas
+/src-tauri/gen/schemas/
