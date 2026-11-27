@@ -197,8 +197,10 @@ mod tests {
     fn rms(bytes: &[u8]) -> f64 {
         let mut sum = 0.0;
         let mut count = 0;
-        for chunk in bytes.chunks_exact(4) {
-            let sample = f64::from(f32::from_le_bytes(chunk.try_into().unwrap()));
+        let (chunks, remainder) = bytes.as_chunks::<4>();
+        assert!(remainder.is_empty());
+        for chunk in chunks {
+            let sample = f64::from(f32::from_le_bytes(*chunk));
             assert!(sample.is_finite());
             sum += sample * sample;
             count += 1;
@@ -229,5 +231,65 @@ mod tests {
         let entries: Vec<FilterEntry> = serde_json::from_str(json).unwrap();
         let graph = compile(&entries, 48_000).unwrap();
         assert!(rms(&pcm(graph.as_deref())) > 0.0);
+    }
+
+    fn noise_graph(reduction_db: f64, noise_floor_db: f64) -> Result<Option<String>, String> {
+        let filter = FilterEntry {
+            enabled: true,
+            filter: AudioFilter::NoiseReduction {
+                reduction_db,
+                noise_floor_db,
+            },
+        };
+        compile(&[filter], 48_000)
+    }
+
+    #[test]
+    fn validates_noise_reduction_parameters() {
+        let graph = noise_graph(6.0, -50.0).unwrap().unwrap();
+        assert_eq!(graph, "afftdn=nr=6:nf=-50");
+        for (nr, nf) in [(0.0, -50.0), (31.0, -50.0), (6.0, -81.0), (6.0, -19.0)] {
+            assert!(noise_graph(nr, nf).is_err());
+        }
+        assert!(noise_graph(f64::NAN, -50.0).is_err());
+        assert!(noise_graph(6.0, f64::INFINITY).is_err());
+    }
+
+    fn noise_pcm(graph: Option<&str>) -> Vec<u8> {
+        let mut args = vec![
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "anoisesrc=color=white:amplitude=0.01:seed=1234:sample_rate=48000:duration=3",
+        ];
+        if let Some(graph) = graph {
+            args.extend(["-af", graph]);
+        }
+        args.extend(["-f", "f32le", "-acodec", "pcm_f32le", "-"]);
+        Tool::Ffmpeg.run(&args).unwrap().stdout
+    }
+
+    fn steady_noise_rms(graph: Option<&str>) -> f64 {
+        let samples = noise_pcm(graph);
+        assert_eq!(samples.len(), 3 * 48_000 * 4);
+        // Measure the middle second after filter startup.
+        rms(&samples[48_000 * 4..96_000 * 4])
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with afftdn"]
+    fn processes_noise_reduction_parameters() {
+        let baseline = steady_noise_rms(None);
+        let moderate = noise_graph(6.0, -45.0).unwrap();
+        let stronger = noise_graph(12.0, -45.0).unwrap();
+        let low_floor = noise_graph(12.0, -60.0).unwrap();
+        let moderate = steady_noise_rms(moderate.as_deref());
+        let stronger = steady_noise_rms(stronger.as_deref());
+        let low_floor = steady_noise_rms(low_floor.as_deref());
+        assert!(moderate < baseline * 0.85);
+        assert!(stronger < moderate);
+        assert!(low_floor > stronger);
     }
 }
