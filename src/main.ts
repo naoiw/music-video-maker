@@ -1,5 +1,6 @@
 import "./styles.css";
 import { initializeAudioSource } from "./components/audio-source";
+import { initializeVisualSource } from "./components/visual-source";
 import { getMediaToolStatus, getRuntimeInfo } from "./services/runtime";
 
 async function initialize(): Promise<void> {
@@ -16,6 +17,7 @@ async function initialize(): Promise<void> {
       media.textContent = "デスクトップ処理は利用できません。";
       return;
     }
+    initializeVisualSource();
     const result = await getMediaToolStatus();
     if (!result) {
       media.textContent = "メディア処理環境を取得できません。";
