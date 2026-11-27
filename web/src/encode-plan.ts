@@ -1,24 +1,21 @@
 import { gifTimelineFilter } from "./gif-loop.ts";
 import { MAX_IMAGE_PIXELS, assertImageDimensions } from "./image-dimensions.ts";
-import { settingsFields } from "../../src/services/settings-schema.ts";
+import { settingsFields, browserResolutions, parseOutputSettings, type Fit, type BrowserResolution } from "../../src/services/settings-schema.ts";
 
 export const LIMITS = { audioBytes: 50 * 1024 * 1024, imageBytes: 32 * 1024 * 1024, pixels: MAX_IMAGE_PIXELS, seconds: 300 } as const;
 export type ImageKind = "png" | "jpeg" | "gif";
-export const browserResolutions = ["1280x720", ...settingsFields.resolution.options] as const;
-export type Fit = (typeof settingsFields.fit.options)[number];
-export type Resolution = (typeof browserResolutions)[number];
+export { browserResolutions, type Fit };
+export type Resolution = BrowserResolution;
 export const browserOutputDefaults = {
-  resolution: "1280x720",
+  resolution: browserResolutions[0],
   fps: Number(settingsFields.fps.initial),
   fit: settingsFields.fit.initial,
   crf: Number(settingsFields.quality.initial),
 } as const;
 
 export function validateOutputOptions(resolution: string, fit: string, fps: number, crf: number): void {
-  if (!browserResolutions.some(value => value === resolution)) throw new Error("非対応の出力解像度です。");
-  if (!settingsFields.fit.options.some(value => value === fit)) throw new Error("非対応の画像配置です。");
-  if (!settingsFields.fps.options.some(value => Number(value) === fps)) throw new Error("非対応のフレームレートです。");
-  if (!settingsFields.quality.options.some(value => Number(value) === crf)) throw new Error("非対応の映像品質です。");
+  if (!parseOutputSettings({resolution,fit,fps:String(fps),quality:String(crf)}, "browser"))
+    throw new Error("非対応の出力設定です（解像度・配置・フレームレート・品質を確認してください）。");
 }
 
 export function imageKind(bytes: Uint8Array): ImageKind {

@@ -1,6 +1,7 @@
 import { settingsFields } from "../../src/services/settings-schema";
-import { defaultFilterSettings, validateFilterSettings, type FilterSettings } from "../../src/services/preset-schema";
+import { defaultFilterSettings, filterIds, validateFilterSettings, type FilterSettings } from "../../src/services/preset-schema";
 import { activeFilterNames, filterGroups } from "./audio-filter-plan";
+import { applySettingControls, readSettingControls } from "../../src/services/settings-controls";
 
 function get<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -29,12 +30,11 @@ export function initializeWebAudioFilters(onChange: () => void) {
     }
   }
   function readValues(includeDisabled: boolean): FilterSettings {
-    const result = { ...defaults };
-    for (const group of filterGroups) {
-      const enabled = get<HTMLInputElement>(group.enabled).checked;
-      result[group.enabled] = enabled;
-      for (const id of group.fields)
-        result[id] = enabled || includeDisabled ? get<HTMLInputElement>(id).valueAsNumber : defaults[id];
+    const result = readSettingControls(filterIds);
+    if (!includeDisabled) {
+      for (const group of filterGroups)
+        if (result[group.enabled] !== true)
+          for (const id of group.fields) result[id] = defaults[id];
     }
     const valid = validateFilterSettings(result);
     if (!valid) throw new Error("音声フィルタの設定値を確認してください。");
@@ -45,10 +45,7 @@ export function initializeWebAudioFilters(onChange: () => void) {
   function apply(raw: unknown, notify = true) {
     const valid = validateFilterSettings(raw);
     if (!valid) throw new Error("音声フィルタの設定値を確認してください。");
-    for (const group of filterGroups) {
-      get<HTMLInputElement>(group.enabled).checked = valid[group.enabled] === true;
-      for (const id of group.fields) get<HTMLInputElement>(id).value = String(valid[id]);
-    }
+    applySettingControls(valid,filterIds);
     // Do not dispatch checkbox events: preserve the saved limiter choice.
     if (notify) update(); else refresh();
   }
@@ -86,10 +83,7 @@ export function initializeWebAudioFilters(onChange: () => void) {
     });
   }
   get<HTMLButtonElement>("filters-reset").addEventListener("click", () => {
-    for (const group of filterGroups) {
-      get<HTMLInputElement>(group.enabled).checked = false;
-      for (const id of group.fields) get<HTMLInputElement>(id).value = String(defaults[id]);
-    }
+    applySettingControls(defaults,filterIds);
     update();
   });
   refresh();

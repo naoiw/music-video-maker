@@ -4,8 +4,10 @@ import { getSelectedAudio } from "./audio-source";
 import { getFrequencyFilters, initializeFrequencyFilters } from "./frequency-filters";
 import { getVolumeFilters, initializeVolumeFilters } from "./volume-filters";
 
-const DEFAULT_REDUCTION = 6;
-const DEFAULT_FLOOR = -50;
+import { settingsFields } from "../services/settings-schema";
+
+const DEFAULT_REDUCTION = settingsFields["noise-reduction"].initial;
+const DEFAULT_FLOOR = settingsFields["noise-floor"].initial;
 
 interface NoiseSettings {
   enabled: boolean;

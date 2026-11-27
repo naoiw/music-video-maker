@@ -1,46 +1,16 @@
 import { reportError } from "./diagnostics";
 import { readSavedSettings, writeSavedSettings } from "../services/settings";
 import {
-  defaultSettings, isSettingId, parseSettings, settingsFields, settingsIds,
-  validateSettings, type SettingId, type SettingsValues,
+  defaultSettings, isSettingId, parseSettings, settingsFields,
+  validateSettings, type SettingsValues,
 } from "../services/settings-schema";
 import { filterIds, validateFilterSettings, type FilterSettings } from "../services/preset-schema";
 import { createSettingsWriter, type SaveState } from "../services/settings-writer";
 
-function control(id: SettingId): HTMLInputElement | HTMLSelectElement {
-  const node = document.getElementById(id);
-  if (!(node instanceof HTMLInputElement || node instanceof HTMLSelectElement)) {
-    throw new Error(`Missing setting control: ${id}`);
-  }
-  return node;
-}
-
-function apply(values: SettingsValues, ids: readonly SettingId[] = settingsIds): void {
-  for (const id of ids) {
-    const node = control(id);
-    const value = values[id];
-    if (node instanceof HTMLInputElement && settingsFields[id].kind === "boolean") {
-      node.checked = value === true;
-    } else {
-      node.value = String(value);
-    }
-  }
-}
-
-function readValues(ids: readonly SettingId[]): Record<string, unknown> {
-  return Object.fromEntries(ids.map(id => {
-    const node = control(id);
-    const field = settingsFields[id];
-    if (node instanceof HTMLInputElement) {
-      if (field.kind === "boolean") return [id, node.checked];
-      if (field.kind === "number") return [id, node.valueAsNumber];
-    }
-    return [id, node.value];
-  }));
-}
+import { applySettingControls as apply, readSettingControls as readValues } from "../services/settings-controls";
 
 function snapshot(): SettingsValues | null {
-  return validateSettings(readValues(settingsIds));
+  return validateSettings(readValues());
 }
 
 export function snapshotFilterSettings(): FilterSettings | null {

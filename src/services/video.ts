@@ -2,13 +2,8 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import type { FilterChain } from "./audio-filters";
 
-export interface OutputSettings {
-  width: number;
-  height: number;
-  fps: number;
-  crf: number;
-  fit: "blurred" | "contain" | "cover";
-}
+import type { OutputSettings } from "./settings-schema";
+export type { OutputSettings } from "./settings-schema";
 
 export interface EncodeProgress {
   phase: "preparing" | "filtering" | "encoding" | "verifying" | "saving";
