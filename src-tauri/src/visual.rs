@@ -108,9 +108,16 @@ fn load_visual_inner(path: &str) -> Result<VisualInfo, String> {
 
 // Compose a static image once, using the same pixels for preview and export.
 // Image formats with alpha are composited on black before resizing.
-pub(crate) fn blurred_image(info: &VisualInfo, width: u32, height: u32) -> Result<RgbImage, String> {
+pub(crate) fn blurred_image(
+    info: &VisualInfo,
+    width: u32,
+    height: u32,
+) -> Result<RgbImage, String> {
     if ![(1920, 1080), (1080, 1080), (1080, 1920)].contains(&(width, height)) {
-        return Err(errors::tagged("OUTPUT_SETTINGS", "非対応の出力解像度です。"));
+        return Err(errors::tagged(
+            "OUTPUT_SETTINGS",
+            "非対応の出力解像度です。",
+        ));
     }
     let format = match info.format {
         "PNG" => ImageFormat::Png,
