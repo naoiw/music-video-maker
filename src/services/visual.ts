@@ -31,6 +31,10 @@ export async function selectVisual(): Promise<VisualSelection | null> {
   if (path === null) return null;
   if (typeof path !== "string") throw new Error("画像を1ファイル選択してください。");
 
+  return loadVisual(path);
+}
+
+export async function loadVisual(path: string): Promise<VisualSelection> {
   const { mimeType, previewBase64, ...info } =
     await invoke<VisualResponse>("load_visual", { path });
   return {
