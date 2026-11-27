@@ -280,7 +280,8 @@ mod tests {
         assert_eq!(*result.get_pixel(1320, 540), Rgb([0, 0, 255]));
         let transition = result.get_pixel(960, 50);
         assert!(transition[0] > 30 && transition[2] > 30);
-        assert_eq!(*result.get_pixel(600, 108), Rgb([255, 0, 0]));
+        assert!(result.get_pixel(940, 107)[0] < 245);
+        assert!(result.get_pixel(940, 108)[0] > 245);
     }
 
     #[test]
@@ -292,5 +293,4 @@ mod tests {
             assert_eq!(*result.get_pixel(width / 2, height / 2), Rgb([12, 34, 56]));
         }
     }
-
 }

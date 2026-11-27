@@ -738,6 +738,24 @@ mod tests {
                     assert!(pixel[2] > 200 && pixel[0] < 50, "{name}: {timestamp}");
                 }
             }
+
+            if name == "no-loop" {
+                let still = dir.path().join("blurred.mp4");
+                let info = encode_video(
+                    audio.to_str().unwrap(),
+                    cover.to_str().unwrap(),
+                    still.to_str().unwrap(),
+                    OutputSettings::default(),
+                    &[],
+                    &EncodeJob::default(),
+                )
+                .unwrap();
+                assert!((info.duration_seconds - 2.3).abs() < 0.2);
+                for timestamp in ["0.1", "0.35", "1.85"] {
+                    let pixel = sample_color(&still, timestamp);
+                    assert!(pixel[0] > 200 && pixel[2] < 50, "{timestamp}");
+                }
+            }
         }
     }
 
