@@ -42,3 +42,8 @@ export async function loadVisual(path: string): Promise<VisualSelection> {
     previewUrl: `data:${mimeType};base64,${previewBase64}`,
   };
 }
+
+export async function renderBlurredPreview(path: string, width: number, height: number): Promise<string> {
+  const base64 = await invoke<string>("render_blurred_preview", { path, width, height });
+  return `data:image/png;base64,${base64}`;
+}

@@ -1,7 +1,55 @@
 import { reportError } from "./diagnostics";
-import { loadVisual, selectVisual, type VisualSource } from "../services/visual";
+import { loadVisual, renderBlurredPreview, selectVisual, type VisualSource } from "../services/visual";
+import type { OutputSettings } from "../services/video";
 
 let selectedVisual: VisualSource | null = null;
+let originalImage: HTMLImageElement | null = null;
+let sourceRevision = 0;
+let requestedKey = "";
+let pending: { key: string; path: string; width: number; height: number } | null = null;
+let rendering = false;
+
+async function drainPreview(preview: HTMLElement): Promise<void> {
+  if (rendering) return;
+  rendering = true;
+  try {
+    while (pending) {
+      const request = pending;
+      pending = null;
+      try {
+        const url = await renderBlurredPreview(request.path, request.width, request.height);
+        if (requestedKey !== request.key) continue;
+        const image = new Image();
+        image.alt = "合成プレビュー";
+        image.className = "preview-image";
+        image.src = url;
+        await image.decode();
+        if (requestedKey === request.key) preview.replaceChildren(image);
+      } catch (error) {
+        if (requestedKey === request.key) preview.textContent = reportError("image", error);
+      }
+    }
+  } finally {
+    rendering = false;
+  }
+}
+
+/** Use native composition for exact preview/export layout; retain GIF playback in legacy modes. */
+export function refreshVisualPreview(settings: OutputSettings): void {
+  const preview = document.getElementById("visual-preview");
+  if (!preview || !selectedVisual || !originalImage) return;
+  const key = `${sourceRevision}:${settings.width}x${settings.height}:${settings.fit}`;
+  if (key === requestedKey) return;
+  requestedKey = key;
+  if (settings.fit !== "blurred") {
+    pending = null;
+    if (preview.firstElementChild !== originalImage) preview.replaceChildren(originalImage);
+    return;
+  }
+  preview.textContent = "合成プレビューを生成しています…";
+  pending = { key, path: selectedVisual.path, width: settings.width, height: settings.height };
+  void drainPreview(preview);
+}
 
 export function getSelectedVisual(): VisualSource | null {
   return selectedVisual;
@@ -38,7 +86,11 @@ export function initializeVisualSource(onChange: () => void = () => {}): (path?:
 
       // Keep the previous valid selection until both metadata and preview succeed.
       preview.replaceChildren(image);
+      originalImage = image;
       selectedVisual = source;
+      sourceRevision += 1;
+      requestedKey = "";
+      pending = null;
       name.textContent = source.name;
       details.textContent = [
         source.format,

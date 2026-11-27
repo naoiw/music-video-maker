@@ -1,7 +1,7 @@
 import { reportError } from "./diagnostics";
 import { getSelectedAudio } from "./audio-source";
 import { getFilterChain } from "./audio-filters";
-import { getSelectedVisual } from "./visual-source";
+import { getSelectedVisual, refreshVisualPreview } from "./visual-source";
 import { cancelEncode, encodeVideo, getEncodeProgress, selectOutput, type OutputSettings } from "../services/video";
 
 export function initializeExport(available: boolean, refreshPreview: () => void): () => void {
@@ -43,7 +43,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
     const mode = fit!.value;
     if (!["1920x1080", "1080x1080", "1080x1920"].includes(size) ||
         ![24, 30, 60].includes(frames) || ![16, 20, 24].includes(crf) ||
-        (mode !== "contain" && mode !== "cover")) return null;
+        (mode !== "blurred" && mode !== "contain" && mode !== "cover")) return null;
     const [width, height] = size.split("x").map(Number);
     return { width, height, fps: frames, crf, fit: mode };
   }
@@ -66,6 +66,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
     if (settings) {
       preview!.dataset.resolution = resolution!.value;
       preview!.dataset.fit = settings.fit;
+      refreshVisualPreview(settings);
     }
     const audio = getSelectedAudio();
     const visual = getSelectedVisual();

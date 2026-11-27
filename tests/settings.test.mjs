@@ -64,3 +64,12 @@ test("write failure is reported and the next edit retries", async () => {
   assert.equal(attempts, 2);
   assert.equal(states.at(-1), "saved");
 });
+
+test("blurred layout is the default while existing saved contain and cover choices are retained", () => {
+  assert.equal(defaultSettings().fit, "blurred");
+  for (const fit of ["blurred", "contain", "cover"]) {
+    const values = { ...defaultSettings(), fit };
+    assert.equal(parseSettings(serializeSettings(values)).fit, fit);
+  }
+  assert.equal(validateSettings({ ...defaultSettings(), fit: "unknown" }), null);
+});
