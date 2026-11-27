@@ -4,7 +4,7 @@
 
 ## 開発状況
 
-MVP（v0.1.0）の開発中です。現時点では配布用アプリケーションはありません。
+MVP（v0.1.0）の開発中です。現時点では配布用アプリケーションはありません。Windows ポータブル版の生成基盤を整備中です（[配布パッケージ](docs/windows-package.md)）。
 
 ## MVP の目標
 
@@ -29,4 +29,4 @@ Rust / Tauri / TypeScript / FFmpeg を使用する方針です。
 
 ## License
 
-[Apache License 2.0](LICENSE)。外部ライブラリおよび FFmpeg の配布条件は別途確認します。
+[Apache License 2.0](LICENSE)。外部ライブラリおよび FFmpeg の配布審査は [配布パッケージ](docs/windows-package.md) を参照してください。
