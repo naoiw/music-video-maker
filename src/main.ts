@@ -1,35 +1,33 @@
 import "./styles.css";
 import { getMediaToolStatus, getRuntimeInfo } from "./services/runtime";
 
-const status = document.querySelector<HTMLElement>("#status");
-if (!status) throw new Error("Missing status element");
+async function initialize(): Promise<void> {
+  const status = document.querySelector<HTMLElement>("#runtime-status");
+  const media = document.querySelector<HTMLElement>("#media-status");
+  if (!status || !media) throw new Error("Missing status elements");
 
-async function initialize(element: HTMLElement): Promise<void> {
   try {
     const runtime = await getRuntimeInfo();
-    element.textContent = runtime.kind === "desktop"
-      ? `Desktop / ${runtime.os} / v${runtime.version}`
-      : "Browser preview — デスクトップ処理は利用できません。";
-  } catch (error) {
-    element.textContent = `実行環境の取得に失敗しました: ${String(error)}`;
-  }
-}
-
-void initialize(status);
-
-async function initializeMediaTools(): Promise<void> {
-  const element = document.querySelector<HTMLElement>("#media-status");
-  if (!element) return;
-  try {
+    status.textContent = runtime.kind === "desktop"
+      ? `Desktop · v${runtime.version}`
+      : "Browser preview";
+    if (runtime.kind === "browser") {
+      media.textContent = "デスクトップ処理は利用できません。";
+      return;
+    }
     const result = await getMediaToolStatus();
-    if (!result) return;
-    element.textContent = [
+    if (!result) {
+      media.textContent = "メディア処理環境を取得できません。";
+      return;
+    }
+    media.textContent = [
       `FFmpeg: ${result.ffmpeg.version ?? result.ffmpeg.error ?? "未検出"}`,
       `FFprobe: ${result.ffprobe.version ?? result.ffprobe.error ?? "未検出"}`,
     ].join(" / ");
   } catch (error) {
-    element.textContent = `メディア処理環境の取得に失敗しました: ${String(error)}`;
+    status.textContent = "環境確認エラー";
+    media.textContent = String(error);
   }
 }
 
-void initializeMediaTools();
+void initialize();
