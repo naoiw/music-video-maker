@@ -18,6 +18,8 @@ const progress = get<HTMLProgressElement>("progress");
 const status = get<HTMLElement>("status");
 const log = get<HTMLElement>("log");
 const image = get<HTMLImageElement>("image-preview");
+const preview = get<HTMLElement>("visual-preview");
+const background = get<HTMLImageElement>("preview-background");
 const output = get<HTMLVideoElement>("output");
 const download = get<HTMLAnchorElement>("download");
 let busy = false;
@@ -66,16 +68,33 @@ function metadataDuration(file: File): Promise<number> {
     el.preload = "metadata"; el.src = url;
   });
 }
+function refreshPreview() {
+  const blurred = fit.value === "blurred";
+  preview.dataset.fit = fit.value;
+  preview.hidden = !imageURL;
+  background.hidden = !imageURL || !blurred;
+  image.style.width = "";
+  image.style.height = "";
+  if (blurred && image.naturalWidth && image.naturalHeight) {
+    const [w,h] = resolution.value.split("x").map(Number);
+    const scale = Math.min(w/image.naturalWidth, h*.8/image.naturalHeight);
+    image.style.width = (image.naturalWidth*scale/w*100) + "%";
+    image.style.height = (image.naturalHeight*scale/h*100) + "%";
+  }
+}
+image.addEventListener("load", refreshPreview);
+fit.addEventListener("change", () => { clearOutput(); refreshPreview(); });
+resolution.addEventListener("change", () => { clearOutput(); refreshPreview(); });
 audio.addEventListener("change", () => { clearOutput(); refresh(); });
 visual.addEventListener("change", () => {
   clearOutput();
   if (imageURL) URL.revokeObjectURL(imageURL);
-  image.removeAttribute("src"); image.hidden = true; imageURL = "";
+  image.removeAttribute("src"); background.removeAttribute("src"); image.hidden = true; imageURL = "";
   const file = visual.files?.[0];
   if (file && file.size > 0 && file.size <= LIMITS.imageBytes) {
-    imageURL = URL.createObjectURL(file); image.src = imageURL; image.hidden = false;
+    imageURL = URL.createObjectURL(file); background.src = imageURL; image.src = imageURL; image.hidden = false;
   }
-  refresh();
+  refreshPreview(); refresh();
 });
 cancel.addEventListener("click", () => { stop(); progress.value = 0; setStatus("中断しました。再実行できます。","cancelled"); });
 encode.addEventListener("click", async () => {

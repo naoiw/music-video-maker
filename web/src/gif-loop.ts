@@ -90,7 +90,7 @@ export function prepareLoopingGif(bytes: Uint8Array): { bytes: Uint8Array<ArrayB
  * The frame index N remains monotonic across demuxer loops. Use a balanced
  * expression for unequal delays so evaluation depth is logarithmic.
  */
-export function gifTimelineFilter(delays: readonly number[]): string {
+export function gifTimelineFilter(delays: readonly number[], convertFps = true): string {
   if (!delays.length || delays.some(d => !Number.isInteger(d) || d < 2 || d > 65535))
     throw new Error("GIFのフレーム表示時間が不正です。");
   let expression: string;
@@ -111,5 +111,5 @@ export function gifTimelineFilter(delays: readonly number[]): string {
     }
     expression = "floor(N/" + count + ")*" + starts[count] + "+" + lookup(0, count);
   }
-  return "settb=1/100,setpts='" + expression + "',fps=30";
+  return "settb=1/100,setpts='" + expression + "'" + (convertFps ? ",fps=30" : "");
 }

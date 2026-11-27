@@ -7,8 +7,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { cpus, totalmem } from "node:os";
 const benchmark = process.argv.includes("--benchmark");
 const cases = benchmark
-  ? [{ext:"png",seconds:180,width:1920,height:1080,fit:"contain"},{ext:"jpg",seconds:295,width:1920,height:1080,fit:"contain"}]
-  : ["png","jpg","gif","variable.gif"].flatMap(ext=>["contain","cover"].map(fit=>({ext,seconds:1.5,width:1280,height:720,fit})));
+  ? [{ext:"png",seconds:180,width:1920,height:1080,fit:"contain"},{ext:"jpg",seconds:295,width:1920,height:1080,fit:"contain"},{ext:"png",seconds:180,width:1920,height:1080,fit:"blurred"}]
+  : [...["png","jpg","gif","variable.gif"].flatMap(ext=>["blurred","contain","cover"].map(fit=>({ext,seconds:1.5,width:1280,height:720,fit}))),{ext:"variable.gif",seconds:12,width:1920,height:1080,fit:"blurred"}];
 const results = [];
 const tmp = await mkdtemp(join(tmpdir(),"mvm-web-smoke-"));
 const base = "http://127.0.0.1:4173/music-video-maker/";
@@ -59,6 +59,7 @@ try {
   async function evaluate(expression){const res=await call("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true});if(res.exceptionDetails)throw Error(res.exceptionDetails.text);return res.result.value;}
   await call("Page.enable");await call("DOM.enable");await call("Page.navigate",{url:base});
   await wait(async()=>await evaluate("!!document.querySelector('#encode') && document.readyState==='complete'"));
+  if(await evaluate("document.querySelector('#fit').value")!=="blurred")throw Error("Unexpected default image fit");
   const root=(await call("DOM.getDocument")).root.nodeId;
   const getNode=async selector=>(await call("DOM.querySelector",{nodeId:root,selector})).nodeId;
   const audio=await getNode("#audio"), visual=await getNode("#visual");
@@ -90,10 +91,14 @@ try {
   for(const {ext,seconds,width,height,fit} of cases){
     await call("DOM.setFileInputFiles",{nodeId:audio,files:[join(tmp,"audio-"+seconds+".mp3")]});
     await call("DOM.setFileInputFiles",{nodeId:visual,files:[join(tmp,"image."+ext)]});
-    await evaluate("document.querySelector('#resolution').value="+JSON.stringify(width+"x"+height));
-    await evaluate("document.querySelector('#fit').value="+JSON.stringify(fit));
+    for(const [selector,value] of [["#resolution",width+"x"+height],["#fit",fit]]){
+      await evaluate("(()=>{const el=document.querySelector("+JSON.stringify(selector)+");el.value="+JSON.stringify(value)+";el.dispatchEvent(new Event('change'));})()");
+    }
+    await wait(()=>evaluate("document.querySelector('#image-preview').naturalWidth>0"));
+    const previewOk=await evaluate("document.querySelector('#visual-preview').dataset.fit==="+JSON.stringify(fit)+" && document.querySelector('#preview-background').hidden==="+JSON.stringify(fit!=="blurred")+" && !document.querySelector('#visual-preview').hidden");
+    if(!previewOk)throw Error("Preview fit mismatch: "+fit);
     await wait(()=>evaluate("!document.querySelector('#encode').disabled"));
-    if(benchmark && seconds===180){
+    if(benchmark && seconds===180 && fit==="contain"){
       await evaluate("document.querySelector('#encode').click()");
       await wait(async()=> (await evaluate("document.querySelector('#status').textContent")).includes("動画を生成中"),120000);
       await evaluate("document.querySelector('#cancel').click()");
@@ -112,7 +117,7 @@ try {
     const wallSeconds=(performance.now()-started)/1000;
     const status=await evaluate("document.querySelector('#status').textContent");
     if(state!=="done")throw Error(ext+": "+status+" "+await evaluate("document.querySelector('#log').textContent"));
-    const path=join(tmp,ext+"-"+fit+".mp4"),size=await saveOutput(path);
+    const path=join(tmp,ext+"-"+fit+"-"+seconds+".mp4"),size=await saveOutput(path);
     const info=JSON.parse(run("ffprobe",["-v","error","-show_streams","-show_format","-of","json",path]).toString());
     const v=info.streams.find(s=>s.codec_type==="video"),a=info.streams.find(s=>s.codec_type==="audio");
     const tolerance=benchmark?0.5:0.4;
@@ -125,10 +130,13 @@ try {
       const samples=animated?[]:[[0.1,ext==="png"?"red":"blue"],[1.3,ext==="png"?"red":"blue"]];
       // Decode once in presentation order. Pair every RGB sample with its actual PTS.
       // Avoid demuxer seek/keyframe differences obscuring the output timing.
-      const pixels=run("ffmpeg",["-v","error","-i",path,"-vf","crop=2:2,scale=1:1,format=rgb24","-fps_mode","passthrough","-threads","1","-f","rawvideo","-"]);
+      const crops=fit==="blurred"?["crop=2:2","crop=2:2:"+Math.floor(width/2)+":20"]:["crop=2:2"];
       const decoded=JSON.parse(run("ffprobe",["-v","error","-select_streams","v:0","-show_frames","-show_entries","frame=best_effort_timestamp_time","-of","json",path]).toString()).frames;
       const times=decoded.map(f=>Number(f.best_effort_timestamp_time));
-      if(pixels.length!==times.length*3||!times.length||times.some((t,i)=>!Number.isFinite(t)||(i>0&&Math.abs(t-times[i-1]-1/30)>0.001))||Math.abs(times[0])>0.001)throw Error("Invalid decoded frame timing: "+JSON.stringify(times));
+      if(!times.length||times.some((t,i)=>!Number.isFinite(t)||(i>0&&Math.abs(t-times[i-1]-1/30)>0.001))||Math.abs(times[0])>0.001)throw Error("Invalid decoded frame timing: "+JSON.stringify(times));
+      for(const crop of crops){
+      const pixels=run("ffmpeg",["-v","error","-i",path,"-vf",crop+",scale=1:1,format=rgb24","-fps_mode","passthrough","-threads","1","-f","rawvideo","-"]);
+      if(pixels.length!==times.length*3)throw Error("Invalid decoded pixel count: "+crop);
       const colors=times.map((_,i)=>pixels[i*3]>180&&pixels[i*3+2]<80?"red":pixels[i*3+2]>180&&pixels[i*3]<80?"blue":"unknown");
       for(const [time,color] of samples){
         const i=times.reduce((best,t,index)=>Math.abs(t-time)<Math.abs(times[best]-time)?index:best,0);
@@ -149,15 +157,16 @@ try {
           }
         }
       }
+      }
     }
     console.log(ext+"/"+fit+": "+status+"; FFprobe passed."+(benchmark?"":" Frame samples passed."));
     const encodeSeconds=Number(status.match(/エンコード ([\d.]+) 秒/)?.[1]);
     if(!Number.isFinite(encodeSeconds)||encodeSeconds<=0)throw Error("Missing encode timing");
-    results.push({ext,seconds,width,height,encodeSeconds,wallSeconds,outputMiB:size/1024/1024,baselineRssMiB:baseline,peakRssMiB:peak,realtimeRatio:seconds/encodeSeconds});
+    results.push({ext,fit,seconds,width,height,encodeSeconds,wallSeconds,outputMiB:size/1024/1024,baselineRssMiB:baseline,peakRssMiB:peak,realtimeRatio:seconds/encodeSeconds});
   }
   if(benchmark){
     const version=await call("Browser.getVersion");
-    const report=["## Browser performance (synthetic fixtures)", "", "Chrome: "+version.product+"; CPU: "+cpus()[0]?.model+" ("+cpus().length+" logical); RAM: "+(totalmem()/1024**3).toFixed(1)+" GiB", "", "| Source | Duration | Resolution | Encode | End-to-end | Media/encode | Output | Peak browser RSS* |", "| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |", ...results.map(x=>"| "+x.ext+" | "+x.seconds+" s | "+x.width+"×"+x.height+" | "+x.encodeSeconds.toFixed(1)+" s | "+x.wallSeconds.toFixed(1)+" s | "+x.realtimeRatio.toFixed(2)+"x | "+x.outputMiB.toFixed(1)+" MiB | "+(x.peakRssMiB?.toFixed(0)??"n/a")+" MiB |"), "", "* Linux Chrome process-tree RSS sampled every 2 seconds; shared pages can be counted more than once. Not a precise WASM memory measurement. Synthetic fixtures are not a real-song or user-PC benchmark.", "", "Cancel and retry passed; FFprobe verified both streams and container duration."].join("\n");
+    const report=["## Browser performance (synthetic fixtures)", "", "Chrome: "+version.product+"; CPU: "+cpus()[0]?.model+" ("+cpus().length+" logical); RAM: "+(totalmem()/1024**3).toFixed(1)+" GiB", "", "| Source | Fit | Duration | Resolution | Encode | End-to-end | Media/encode | Output | Peak browser RSS* |", "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |", ...results.map(x=>"| "+x.ext+" | "+x.fit+" | "+x.seconds+" s | "+x.width+"×"+x.height+" | "+x.encodeSeconds.toFixed(1)+" s | "+x.wallSeconds.toFixed(1)+" s | "+x.realtimeRatio.toFixed(2)+"x | "+x.outputMiB.toFixed(1)+" MiB | "+(x.peakRssMiB?.toFixed(0)??"n/a")+" MiB |"), "", "* Linux Chrome process-tree RSS sampled every 2 seconds; shared pages can be counted more than once. Not a precise WASM memory measurement. Synthetic fixtures are not a real-song or user-PC benchmark.", "", "Cancel and retry passed; FFprobe verified both streams and container duration."].join("\n");
     console.log(report);
     console.log(JSON.stringify(results));
     if(process.env.GITHUB_STEP_SUMMARY)await appendFile(process.env.GITHUB_STEP_SUMMARY,report+"\n");
