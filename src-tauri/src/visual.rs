@@ -158,4 +158,34 @@ mod tests {
         assert!(!dimensions_are_supported(0, 100));
         assert!(!dimensions_are_supported(100_000, 100_000));
     }
+
+    #[test]
+    fn loads_local_images_and_rejects_invalid_file_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("画像.JPEG");
+        let bytes = fixture(ImageFormat::Jpeg);
+        std::fs::write(&path, &bytes).unwrap();
+        let info = load_visual(path.to_str().unwrap()).unwrap();
+        assert_eq!(info.name, "画像.JPEG");
+        assert_eq!((info.width, info.height), (12, 8));
+        assert_eq!(STANDARD.decode(info.preview_base64).unwrap(), bytes);
+
+        let empty = dir.path().join("empty.png");
+        let oversized = dir.path().join("oversized.png");
+        let missing = dir.path().join("missing.png");
+        std::fs::write(&empty, []).unwrap();
+        File::create(&oversized)
+            .unwrap()
+            .set_len(MAX_IMAGE_BYTES as u64 + 1)
+            .unwrap();
+        for (path, code) in [
+            (empty, "[MVM:INPUT_IMAGE]"),
+            (oversized, "[MVM:INPUT_IMAGE]"),
+            (missing, "[MVM:PATH_MISSING]"),
+        ] {
+            assert!(load_visual(path.to_str().unwrap())
+                .unwrap_err()
+                .starts_with(code));
+        }
+    }
 }

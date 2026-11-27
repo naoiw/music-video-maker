@@ -191,4 +191,23 @@ mod tests {
         let path = std::env::temp_dir().join("song.wav");
         assert!(probe_audio(path.to_str().unwrap()).is_err());
     }
+
+    #[test]
+    fn rejects_missing_empty_and_directory_mp3_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.mp3");
+        let empty = dir.path().join("empty.mp3");
+        let folder = dir.path().join("folder.mp3");
+        std::fs::write(&empty, []).unwrap();
+        std::fs::create_dir(&folder).unwrap();
+        for (path, code) in [
+            (missing, "[MVM:PATH_MISSING]"),
+            (empty, "[MVM:INPUT_AUDIO]"),
+            (folder, "[MVM:INPUT_AUDIO]"),
+        ] {
+            assert!(probe_audio(path.to_str().unwrap())
+                .unwrap_err()
+                .starts_with(code));
+        }
+    }
 }
