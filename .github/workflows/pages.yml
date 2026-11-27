@@ -1,0 +1,70 @@
+name: Browser preview and Pages
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Publish reviewed browser edition
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - name: Verify test-only core or reviewed publication lock
+        run: |
+          if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.deploy }}" = true ]; then
+            test "${{ github.ref }}" = refs/heads/main
+            pnpm web:prepare --publish
+          else
+            pnpm web:prepare
+          fi
+      - run: pnpm web:build
+      - name: Install browser smoke test tools if needed
+        run: |
+          command -v google-chrome
+          if ! command -v ffmpeg || ! command -v ffprobe; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+      - run: pnpm web:smoke
+      - run: git diff --exit-code -- pnpm-lock.yaml src-tauri/Cargo.lock
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+        with:
+          path: dist-web
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy reviewed web preview
+        id: deployment
+        uses: actions/deploy-pages@v4
