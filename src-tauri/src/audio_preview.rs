@@ -161,10 +161,9 @@ mod tests {
             .unwrap();
         let before = std::fs::read(&source).unwrap();
         let output = dir.path().join("sample.wav");
-        let filters: Vec<audio_filters::FilterEntry> = serde_json::from_str(
-            r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#,
-        )
-        .unwrap();
+        let filters: Vec<audio_filters::FilterEntry> =
+            serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#)
+                .unwrap();
         let original = decoded_pcm(render(path, 2.0, &[]).unwrap(), &output);
         let filtered = decoded_pcm(render(path, 2.0, &filters).unwrap(), &output);
         assert_eq!(original.len(), 30 * 48_000 * 4);
