@@ -17,6 +17,8 @@ MVP（v0.1.0）の開発中です。現時点では配布用アプリケーシ�
 
 Rust / Tauri / TypeScript / FFmpeg を使用する方針です。
 
+- [MVP仕様](docs/specification.md)
+- [システム構成](docs/architecture.md)
 - [開発フロー](docs/development.md)
 - [Issues](https://github.com/naoiw/music-video-maker/issues)
 
