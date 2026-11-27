@@ -180,14 +180,7 @@ mod tests {
 
     fn tone_pcm(frequency_hz: u32, graph: Option<&str>) -> Vec<u8> {
         let source = format!("sine=frequency={frequency_hz}:sample_rate=48000:duration=0.5");
-        let mut args = vec![
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            source.as_str(),
-        ];
+        let mut args = vec!["-v", "error", "-f", "lavfi", "-i", source.as_str()];
         if let Some(graph) = graph {
             args.extend(["-af", graph]);
         }
