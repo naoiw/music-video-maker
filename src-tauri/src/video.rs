@@ -9,6 +9,7 @@ static ENCODE_LOCK: Mutex<()> = Mutex::new(());
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ImageFit {
+    Blurred,
     Contain,
     Cover,
 }
@@ -29,7 +30,7 @@ impl Default for OutputSettings {
             height: 1080,
             fps: 30,
             crf: 20,
-            fit: ImageFit::Contain,
+            fit: ImageFit::Blurred,
         }
     }
 }
@@ -49,6 +50,7 @@ impl OutputSettings {
     fn filter(self) -> String {
         let (width, height) = (self.width, self.height);
         let (mode, placement) = match self.fit {
+            ImageFit::Blurred => return "setsar=1".into(),
             ImageFit::Contain => (
                 "decrease",
                 format!("pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black"),
@@ -405,6 +407,35 @@ pub(crate) fn encode_video(
         "GIF" => VisualKind::Gif,
         _ => return Err("非対応の画像形式です。".into()),
     };
+    // The blurred layout is static, even for GIF. Prepare one PNG and loop
+    // it rather than blurring and compositing every video frame.
+    let composed = if matches!(settings.fit, ImageFit::Blurred) {
+        let canvas = visual::blurred_image(&image, settings.width, settings.height)?;
+        let directory = tempfile::Builder::new()
+            .prefix(".music-video-maker-image-")
+            .tempdir_in(parent)
+            .map_err(|error| {
+                crate::errors::io_error("画像の一時フォルダを作成できません", &error, "OUTPUT_IO")
+            })?;
+        let path = directory.path().join("composed.png");
+        canvas.save(&path).map_err(|error| match error {
+            image::ImageError::IoError(error) => {
+                crate::errors::io_error("合成画像を保存できません", &error, "OUTPUT_IO")
+            }
+            error => crate::errors::tagged("OUTPUT_IO", error),
+        })?;
+        Some((directory, path))
+    } else {
+        None
+    };
+    let (visual_path, source) = match &composed {
+        Some((_, path)) => (
+            path.to_str()
+                .ok_or_else(|| "画像の一時パスを処理できません。".to_owned())?,
+            VisualKind::Png,
+        ),
+        None => (visual_path, source),
+    };
     drop(image);
     job.check_cancelled()?;
 
@@ -680,7 +711,10 @@ mod tests {
                 audio.to_str().unwrap(),
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
-                OutputSettings::default(),
+                OutputSettings {
+                    fit: ImageFit::Contain,
+                    ..OutputSettings::default()
+                },
                 &[],
                 &EncodeJob::default(),
             )
@@ -704,6 +738,24 @@ mod tests {
                     assert!(pixel[2] > 200 && pixel[0] < 50, "{name}: {timestamp}");
                 }
             }
+
+            if name == "no-loop" {
+                let still = dir.path().join("blurred.mp4");
+                let info = encode_video(
+                    audio.to_str().unwrap(),
+                    cover.to_str().unwrap(),
+                    still.to_str().unwrap(),
+                    OutputSettings::default(),
+                    &[],
+                    &EncodeJob::default(),
+                )
+                .unwrap();
+                assert!((info.duration_seconds - 2.3).abs() < 0.2);
+                for timestamp in ["0.1", "0.35", "1.85"] {
+                    let pixel = sample_color(&still, timestamp);
+                    assert!(pixel[0] > 200 && pixel[2] < 50, "{timestamp}");
+                }
+            }
         }
     }
 
@@ -711,7 +763,12 @@ mod tests {
     fn validates_settings_and_generates_fit_filters() {
         let defaults = OutputSettings::default();
         assert!(defaults.validate().is_ok());
-        assert!(defaults.filter().contains("pad=1920:1080"));
+        assert_eq!(defaults.filter(), "setsar=1");
+        let contain = OutputSettings {
+            fit: ImageFit::Contain,
+            ..defaults
+        };
+        assert!(contain.filter().contains("pad=1920:1080"));
         let cover = OutputSettings {
             width: 1080,
             height: 1920,
@@ -1023,7 +1080,7 @@ mod tests {
         for (width, height) in [(1920, 1080), (1080, 1080), (1080, 1920)] {
             for fps in [24, 30, 60] {
                 for crf in [16, 20, 24] {
-                    for fit in [ImageFit::Contain, ImageFit::Cover] {
+                    for fit in [ImageFit::Blurred, ImageFit::Contain, ImageFit::Cover] {
                         let settings = OutputSettings {
                             width,
                             height,

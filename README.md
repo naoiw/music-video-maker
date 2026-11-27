@@ -1,29 +1,55 @@
 # Music Video Maker
 
-楽曲と画像・動画を合成し、音声フィルタ処理を行って YouTube 向けの MP4 を生成するツールです。
+MP3 と画像を合成し、音声フィルタで音質を調整して YouTube 向けの MP4 を生成する Windows 用ローカル GUI ツールです。Suno の楽曲にも対応します。素材は外部に送信しません。
 
-## 開発状況
+## セットアップとビルド（Windows 10 / 11 x64）
 
-MVP（v0.1.0）の開発中です。現時点では配布用アプリケーションはありません。
+本リポジトリはソースコードのみを公開します。コンパイル済み exe・FFmpeg の配布は行いません。
 
-## MVP の目標
+1. GitHub の **Code → Download ZIP** でソースを取得し、すべて展開します（git clone でも可）。
+2. `setup.bat` をダブルクリックします。不足している Node.js 26、pnpm、C++ Build Tools、Rust、FFmpeg/FFprobe、WebView2 を WinGet 等で導入します。初回はネット接続が必要で、インストーラーや UAC の確認が出る場合があります。
+3. セットアップ完了後、必要に応じて Windows を再起動し、`build.bat` をダブルクリックします。
+4. `src-tauri/target/release/music-video-maker.exe` をダブルクリックして起動します。
 
-- MP3 と PNG / JPEG / GIF の合成（ファイル選択・ドラッグ＆ドロップ）
-- ノイズ除去、周波数・音量フィルタの設定と試聴
-- H.264 / AAC の MP4 出力
-- 出力・音声フィルタ設定の自動保存と復元、名前付きフィルタプリセット
-- エラー時の対処方法と診断情報の表示
-- Windows でのローカル GUI 実行（素材を外部サーバーへ送信しない）
+以降は exe から GUI を使用できます。ソースを更新した場合は再ビルドしてください。FFmpeg/FFprobe は PATH 上に必要です。
+
+依存管理は pnpm を標準とし、コミット済みの `pnpm-lock.yaml` と `src-tauri/Cargo.lock` を使用します。build.bat と CI は固定 lockfile を使用し、pnpm の版は package.json で指定します。
+
+詳細な PowerShell 手順、エラー時の対処は [環境構築とビルド](docs/setup.md) を参照してください。
+
+## 使い方
+
+1. MP3 と画像（PNG / JPEG / GIF）を選択する。ドラッグ＆ドロップも可能。
+2. 解像度・画像配置・映像品質を設定する。横長動画の初期値は 1920 × 1080、30 fps、中央80%・ぼかし背景、CRF 20。
+3. 必要に応じて音声フィルタを設定し、原音・加工音を試聴する。
+4. 「動画出力」で保存先を選択し、「MP4を生成」を押す。
+
+**詳しい操作、設定項目、トラブルシューティングは [ユーザーガイド](docs/user-guide.md) を参照してください。**
+
+## 主な機能
+
+- MP3 と PNG / JPEG / GIF の合成、H.264 / AAC の MP4 出力。
+- 中央80%・ぼかし背景（既定）、全体表示（余白）、画面いっぱい（切り抜き）。
+- GIF は既定のぼかし背景では静止画、他の配置では音声終了までアニメーションを繰り返す。
+- ノイズ除去、周波数・音量フィルタ、原音・加工音の比較試聴（最大30秒）。
+- 出力・音声フィルタ設定の自動保存と復元、名前付きフィルタプリセット。
+- 生成進捗と中断、既存出力の保護、エラー時の対処方法と診断情報。
+
+対象は Windows 10 / 11 x64。複数素材、動画素材、ブラウザ版は MVP 対象外です。
 
 ## 開発
 
-Rust / Tauri / TypeScript / FFmpeg を使用する方針です。
+Rust / Tauri / TypeScript / Vite / pnpm / FFmpeg を使用しています。
 
 - [MVP仕様](docs/specification.md)
 - [システム構成](docs/architecture.md)
+- [UI仕様](docs/ui.md)
 - [音声フィルタ処理基盤](docs/audio-filters.md)
 - [開発フロー](docs/development.md)
 - [テスト・検証](docs/testing.md)
+- [環境構築とビルド](docs/setup.md)
+- [FFmpeg / FFprobe](docs/ffmpeg.md)
+- [MVP総合検証](docs/mvp-validation.md)
 - [Issues](https://github.com/naoiw/music-video-maker/issues)
 
 ## License
@@ -44,4 +70,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-[Apache License 2.0](LICENSE)。外部ライブラリおよび FFmpeg の配布条件は別途確認します。
+[Apache License 2.0](LICENSE)。FFmpeg は別途導入する独立したプログラムであり、各ソフトウェアのライセンスが適用されます。

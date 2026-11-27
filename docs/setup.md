@@ -1,37 +1,58 @@
-# 開発環境の準備
+# Windows の環境構築とビルド
 
-Windows x64 を初期対象とする。
+対象は Windows 10 / 11 x64。ソースのみ公開し、各利用者がビルドする。インストーラー・コンパイル済み exe・FFmpeg の配布は行わない。初回にはインターネット接続、十分な空き容量、インストーラーに応じた管理者権限が必要。
 
-## 必要なもの
+## バッチで準備（pnpm を標準とする）
 
-- Node.js 26（.node-version）
-- Rust stable / rustup（MSVC ターゲット）
-- Microsoft C++ Build Tools（Desktop development with C++）
-- Microsoft Edge WebView2 Runtime
+1. リポジトリを clone、または GitHub の Code → Download ZIP から取得し、すべて展開する。
+2. `setup.bat` をダブルクリックする。Node.js 26、pnpm（package.json の固定版）、Microsoft C++ Build Tools（C++によるデスクトップ開発・Windows SDK）、rustup と Rust stable x64 MSVC、FFmpeg/FFprobe、WebView2 Runtime を確認し、不足分を導入する。WinGet（Microsoft Store の App Installer）が必要。インストール・UAC・利用規約の確認が出たら内容を確認する。
+3. 成功表示を確認し、必要なら Windows を再起動する。PATH が反映されない場合も再起動して再実行する。
+4. `build.bat` をダブルクリックする。pnpm install --frozen-lockfile で依存関係を導入し、Tauri をリリースビルドする。成功すると exe の絶対パスを表示する。
+5. `src-tauri/target/release/music-video-maker.exe` を起動する。以降はソースを更新しない限り再ビルド不要。FFmpeg/FFprobe は引き続き PATH 上に必要。
 
-詳細: https://v2.tauri.app/start/prerequisites/
+既存の Node.js が26系でない場合は自動で置き換えず停止する。Node.js 未導入時は確認済み26系（26.7.0）を指定する。Rust の既定 toolchain は変更せず、stable-x86_64-pc-windows-msvc を使用する。C++ Build Tools が入っていても必要なコンポーネントが不足する場合は Visual Studio Installer で追加する。既存の FFmpeg はバージョン・必要機能を確認して利用する。
 
-## 起動
+setup.bat は同梱の scripts/setup.ps1 をプロセス限定の ExecutionPolicy Bypass で実行する。Windows 全体の実行ポリシーは変更しない。スクリプトの内容を確認してから実行する。企業等のポリシーでブロックされる場合は管理者の指示に従う。
 
-    npm install
-    npm run desktop:dev
+## PowerShell で手動セットアップ
 
-ブラウザだけで UI を確認する場合:
+不足分のみ実行する。既存 Node.js は26系を選択すること。
 
-    npm run dev
+```powershell
+winget install --id OpenJS.NodeJS -e --version 26.7.0
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override "--passive --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+winget install --id Rustlang.Rustup -e
+winget install --id Gyan.FFmpeg -e
+winget install --id Microsoft.EdgeWebView2Runtime -e
+```
 
-ブラウザプレビューでは Tauri のネイティブ処理は利用できない。
+PowerShellを開き直し、必要なら再起動する。
 
-## 検証
+```powershell
+rustup toolchain install stable-x86_64-pc-windows-msvc
+node -v
+npm -v
+# pnpm が未導入の場合のみ（package.json の固定版）
+npm install --global pnpm@10.34.6
+pnpm --version
+rustup run stable-x86_64-pc-windows-msvc cargo -V
+ffmpeg -version
+ffprobe -version
+pnpm install --frozen-lockfile
+if ($LASTEXITCODE -ne 0) { throw 'pnpm install failed' }
+.\build.bat --skip-install
+```
 
-    npm run typecheck
-    npm run build
-    cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-    cargo test --manifest-path src-tauri/Cargo.toml
-    cargo test --manifest-path src-tauri/Cargo.toml video::tests::encodes_ -- --ignored --test-threads=1
-    cargo test --manifest-path src-tauri/Cargo.toml audio_filters::tests::processes_ -- --ignored
-    cargo test --manifest-path src-tauri/Cargo.toml audio_preview::tests::renders_ -- --ignored
-    npm run desktop:build
+setup.bat は pnpm がない場合のみ Node.js 付属の npm で package.json の固定版を導入する。既存 pnpm は固定版を選択して使用し、異なる版を勝手にグローバル更新しない。build.bat は pnpm のみを使用する。`--skip-install` は事前に固定 lockfile で依存関係を導入した場合のオプション。通常は引数なしで実行すればよい。Tauri の開発・ビルドと CI も pnpm に統一し、Cargo は --locked を使用する。
 
-FFmpeg 結合テストには FFmpeg（libmp3lame、libx264、AAC 対応）および FFprobe が必要。CI でも同じ検証を実施する。ローカルの Cargo ビルド成果物は target に保持されるため、通常は毎回削除する必要はない。Cargo.lock と package-lock.json のリポジトリ管理は未対応。
+参照: [Tauri 事前準備](https://v2.tauri.app/ja/start/prerequisites/)、[Microsoft C++ Build Tools](https://visualstudio.microsoft.com/ja/visual-cpp-build-tools/)、[WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)、[FFmpeg](ffmpeg.md)。
+
+## 開発用起動と検証
+
+```powershell
+$env:RUSTUP_TOOLCHAIN = 'stable-x86_64-pc-windows-msvc'
+pnpm install --frozen-lockfile
+pnpm run desktop:dev
+```
+
+ブラウザで UI のみ確認する場合は pnpm run dev。ネイティブ処理は利用できない。テストは [テスト・検証](testing.md) を参照。ビルドキャッシュは target に保持されるため毎回削除する必要はない。`pnpm-lock.yaml` と `src-tauri/Cargo.lock` は Git 管理済み。依存関係を意図的に変更する場合以外は lockfile を更新しない。

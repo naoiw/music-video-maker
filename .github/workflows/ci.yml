@@ -26,27 +26,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
+      - uses: pnpm/action-setup@v4
       - name: Install frontend dependencies
-        run: |
-          if (Test-Path package-lock.json) {
-            npm ci --no-audit --no-fund
-          } else {
-            npm install --no-audit --no-fund
-          }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        run: pnpm install --frozen-lockfile
       - name: Build frontend and typecheck
-        run: npm run build
+        run: pnpm run build
       - name: Frontend tests
-        run: npm test
+        run: pnpm test
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Resolve Cargo dependencies
-        run: |
-          if (-not (Test-Path src-tauri/Cargo.lock)) {
-            cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+      - name: Verify Cargo lockfile
+        run: cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 | Out-Null
       - name: Restore Rust build cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -55,15 +46,23 @@ jobs:
       - name: Rust format
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - name: Rust lint
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Verify FFmpeg integration
         run: |
-          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
-            choco install ffmpeg --yes --no-progress
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User") + ";" + $env:Path
+          # Test-only FFmpeg; fetched from upstream and never uploaded.
+          $archive = Join-Path $env:RUNNER_TEMP 'mvm-ci-ffmpeg.zip'
+          $destination = Join-Path $env:RUNNER_TEMP 'mvm-ci-ffmpeg'
+          curl.exe --fail --location --retry 3 --max-time 300 --output $archive https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec') { throw 'FFmpeg archive SHA-256 mismatch.' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination -ErrorAction Stop
+          $bin = Join-Path $destination 'ffmpeg-8.1.2-essentials_build/bin'
+          $env:Path = "$bin;$env:Path"
+          $bin >> $env:GITHUB_PATH
+          foreach ($name in @('ffmpeg.exe','ffprobe.exe')) {
+            if ((Get-Command $name -CommandType Application | Select-Object -First 1).Source -ne (Join-Path $bin $name)) { throw "Unexpected tool path: $name" }
           }
           ffmpeg -version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -71,13 +70,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # All FFmpeg-dependent tests are marked #[ignore] so the unit suite works without FFmpeg.
           # Run every ignored test here rather than depending on test-name prefixes.
-          cargo test --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
+          cargo test --locked --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build desktop executable
-        run: npm run desktop:build
-      - name: Upload executable for smoke testing
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-desktop
-          path: src-tauri/target/release/music-video-maker.exe
-          if-no-files-found: error
+      - name: Check setup script syntax
+        run: |
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'scripts/setup.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | Out-String | Write-Error }
+      - name: Build desktop executable using user batch
+        shell: cmd
+        run: build.bat --no-pause
+      - name: Verify dependency lockfiles unchanged
+        run: git diff --exit-code -- pnpm-lock.yaml src-tauri/Cargo.lock

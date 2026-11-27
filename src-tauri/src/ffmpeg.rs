@@ -23,9 +23,9 @@ impl Tool {
         let name = format!("{}{}", self.name(), std::env::consts::EXE_SUFFIX);
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
-                let bundled = dir.join(&name);
-                if bundled.is_file() {
-                    return bundled;
+                let local = dir.join(&name);
+                if local.is_file() {
+                    return local;
                 }
             }
         }
