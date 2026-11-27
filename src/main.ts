@@ -31,15 +31,15 @@ async function initialize(): Promise<void> {
     const refreshFilters = initializeAudioFilters(available);
     const refreshPreview = initializeAudioPreview(available);
     if (result.ffprobe.version) initializeAudioSource(() => {
-      refreshExport();
       refreshFilters();
       refreshPreview();
+      refreshExport();
     });
     else {
       const audioStatus = document.querySelector<HTMLElement>("#audio-status");
       if (audioStatus) audioStatus.textContent = "FFprobeが必要です。実行環境を確認してください。";
     }
-    refreshExport = initializeExport(available);
+    refreshExport = initializeExport(available, refreshPreview);
     media.textContent = [
       `FFmpeg: ${result.ffmpeg.version ?? result.ffmpeg.error ?? "未検出"}`,
       `FFprobe: ${result.ffprobe.version ?? result.ffprobe.error ?? "未検出"}`,

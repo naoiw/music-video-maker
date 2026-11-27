@@ -13,6 +13,7 @@ pub(crate) const CANCELLED: &str = "ENCODE_CANCELLED";
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Phase {
     Preparing,
+    Filtering,
     Encoding,
     Verifying,
     Saving,
@@ -142,7 +143,12 @@ fn parse_progress_time(line: &str) -> Option<f64> {
     Some(micros.max(0) as f64 / 1_000_000.0)
 }
 
-pub(crate) fn run_ffmpeg(args: &[&str], job: &EncodeJob) -> Result<(), String> {
+pub(crate) fn run_ffmpeg(
+    args: &[&str],
+    job: &EncodeJob,
+    phase: Phase,
+    progress: (f64, f64),
+) -> Result<(), String> {
     job.check_cancelled()?;
     // Store stderr separately so a full pipe cannot block FFmpeg or cancellation.
     let mut stderr = tempfile::tempfile().map_err(|error| error.to_string())?;
@@ -160,13 +166,15 @@ pub(crate) fn run_ffmpeg(args: &[&str], job: &EncodeJob) -> Result<(), String> {
         let _ = child.wait();
         return Err("FFmpeg の進捗を取得できません。".into());
     };
-    job.set_phase(Phase::Encoding);
+    job.set_phase(phase);
+    let duration = job.snapshot().duration_seconds;
+    let (offset, weight) = progress;
 
     let result = thread::scope(|scope| {
         let reader = scope.spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 if let Some(seconds) = parse_progress_time(&line) {
-                    job.update_time(seconds);
+                    job.update_time(duration * offset + seconds.min(duration) * weight);
                 }
             }
         });
