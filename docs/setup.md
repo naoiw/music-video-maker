@@ -29,7 +29,7 @@ Windows x64 を初期対象とする。
     cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
     cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     cargo test --manifest-path src-tauri/Cargo.toml
-    cargo test --manifest-path src-tauri/Cargo.toml video::tests::encodes_png_and_jpeg -- --ignored
+    cargo test --manifest-path src-tauri/Cargo.toml video::tests::encodes_ -- --ignored --test-threads=1
     npm run desktop:build
 
 FFmpeg 結合テストには FFmpeg（libmp3lame、libx264、AAC 対応）および FFprobe が必要。CI でも同じ検証を実施する。ローカルの Cargo ビルド成果物は target に保持されるため、通常は毎回削除する必要はない。Cargo.lock と package-lock.json のリポジトリ管理は未対応。
