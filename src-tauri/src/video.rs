@@ -1,7 +1,7 @@
-use crate::{audio, encode_job, ffmpeg::Tool, visual};
+use crate::{audio, audio_filters, encode_job, ffmpeg::Tool, visual};
 use encode_job::{EncodeJob, Phase};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 static ENCODE_LOCK: Mutex<()> = Mutex::new(());
@@ -106,6 +106,7 @@ fn encoder_args(
     source: VisualKind,
     temporary_path: &str,
     settings: OutputSettings,
+    filtered_duration: Option<&str>,
 ) -> Vec<String> {
     let fps = settings.fps.to_string();
     let crf = settings.crf.to_string();
@@ -150,7 +151,11 @@ fn encoder_args(
         "-protocol_whitelist",
         "file",
         "-f",
-        "mp3",
+        if filtered_duration.is_some() {
+            "wav"
+        } else {
+            "mp3"
+        },
         "-i",
         audio_path,
         "-map",
@@ -173,17 +178,14 @@ fn encoder_args(
         "tv",
         "-r",
         &fps,
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-movflags",
-        "+faststart",
-        "-shortest",
-        "-f",
-        "mp4",
-        temporary_path,
     ]);
+    args.extend(["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]);
+    if let Some(duration) = filtered_duration {
+        args.extend(["-t", duration]);
+    } else {
+        args.push("-shortest");
+    }
+    args.extend(["-f", "mp4", temporary_path]);
     args.into_iter().map(str::to_owned).collect()
 }
 
@@ -222,7 +224,9 @@ fn validate_output(bytes: &[u8], settings: OutputSettings) -> Result<f64, String
     let video_duration = positive_duration(video.duration.as_deref().unwrap_or_default())?;
     let audio_duration = positive_duration(audio.duration.as_deref().unwrap_or_default())?;
     if (video_duration - audio_duration).abs() > 0.2 {
-        return Err("生成動画の映像と音声の長さが一致しません。".into());
+        return Err(format!(
+            "生成動画の映像と音声の長さが一致しません（映像 {video_duration:.3} 秒、音声 {audio_duration:.3} 秒）。"
+        ));
     }
     positive_duration(&result.format.duration)
 }
@@ -246,11 +250,106 @@ fn validate_destination(path: &Path) -> Result<&Path, String> {
         .ok_or_else(|| "保存先のフォルダがありません。".to_owned())
 }
 
+struct PreparedAudio {
+    _directory: tempfile::TempDir,
+    path: PathBuf,
+    duration: f64,
+}
+
+// Finish the whole filter chain before muxing. Some FFmpeg versions handle
+// buffered audio and -shortest differently when both encoders run together.
+fn prepare_audio(
+    audio_path: &str,
+    graph: &str,
+    info: &audio::AudioInfo,
+    parent: &Path,
+    job: &EncodeJob,
+) -> Result<PreparedAudio, String> {
+    let directory = tempfile::Builder::new()
+        .prefix(".music-video-maker-audio-")
+        .tempdir_in(parent)
+        .map_err(|error| format!("音声の一時フォルダを作成できません: {error}"))?;
+    let path = directory.path().join("filtered.wav");
+    let output = path
+        .to_str()
+        .ok_or_else(|| "音声の一時パスを処理できません。".to_owned())?;
+    let rate = info.sample_rate.to_string();
+    let channels = info.channels.to_string();
+    encode_job::run_ffmpeg(
+        &[
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-nostats",
+            "-progress",
+            "pipe:1",
+            "-xerror",
+            "-y",
+            "-protocol_whitelist",
+            "file",
+            "-f",
+            "mp3",
+            "-i",
+            audio_path,
+            "-map",
+            "0:a:0",
+            "-map_metadata",
+            "-1",
+            "-af",
+            graph,
+            "-ar",
+            &rate,
+            "-ac",
+            &channels,
+            "-c:a",
+            "pcm_f32le",
+            "-f",
+            "wav",
+            "-rf64",
+            "auto",
+            output,
+        ],
+        job,
+        Phase::Filtering,
+        (0.0, 0.15),
+    )?;
+    job.check_cancelled()?;
+    let probe = Tool::Ffprobe.run(&[
+        "-v",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "wav",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        "-i",
+        output,
+    ])?;
+    let duration = positive_duration(String::from_utf8_lossy(&probe.stdout).trim())?;
+    if (duration - info.duration_seconds).abs() > 0.2 {
+        return Err(format!(
+            "音声加工後の長さが入力と一致しません（入力 {:.3} 秒、加工後 {duration:.3} 秒）。",
+            info.duration_seconds
+        ));
+    }
+    job.check_cancelled()?;
+    Ok(PreparedAudio {
+        _directory: directory,
+        path,
+        duration,
+    })
+}
+
 pub(crate) fn encode_video(
     audio_path: &str,
     visual_path: &str,
     output_path: &str,
     settings: OutputSettings,
+    filters: &[audio_filters::FilterEntry],
     job: &EncodeJob,
 ) -> Result<VideoInfo, String> {
     job.check_cancelled()?;
@@ -263,6 +362,7 @@ pub(crate) fn encode_video(
 
     // Revalidate sources at export time; do not trust GUI metadata.
     let audio_info = audio::probe_audio(audio_path)?;
+    let audio_graph = audio_filters::compile(filters, audio_info.sample_rate)?;
     job.set_duration(audio_info.duration_seconds);
     job.check_cancelled()?;
     let image = visual::load_visual(visual_path)?;
@@ -275,6 +375,21 @@ pub(crate) fn encode_video(
     drop(image);
     job.check_cancelled()?;
 
+    let prepared = match audio_graph.as_deref() {
+        Some(graph) => Some(prepare_audio(audio_path, graph, &audio_info, parent, job)?),
+        None => None,
+    };
+    let duration = prepared
+        .as_ref()
+        .map(|audio| format!("{:.6}", audio.duration));
+    let input = match &prepared {
+        Some(audio) => audio
+            .path
+            .to_str()
+            .ok_or_else(|| "音声の一時パスを処理できません。".to_owned())?,
+        None => audio_path,
+    };
+
     // Stage on the same filesystem; publish only after successful verification.
     let temporary = tempfile::Builder::new()
         .prefix(".music-video-maker-")
@@ -286,9 +401,21 @@ pub(crate) fn encode_video(
         .to_str()
         .ok_or_else(|| "一時ファイルのパスを処理できません。".to_owned())?;
 
-    let args = encoder_args(audio_path, visual_path, source, temp_path, settings);
+    let args = encoder_args(
+        input,
+        visual_path,
+        source,
+        temp_path,
+        settings,
+        duration.as_deref(),
+    );
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    encode_job::run_ffmpeg(&args, job)?;
+    let progress = if prepared.is_some() {
+        (0.15, 0.85)
+    } else {
+        (0.0, 1.0)
+    };
+    encode_job::run_ffmpeg(&args, job, Phase::Encoding, progress)?;
     job.set_phase(Phase::Verifying);
     job.check_cancelled()?;
 
@@ -305,6 +432,15 @@ pub(crate) fn encode_video(
         temp_path,
     ])?;
     let duration_seconds = validate_output(&probe.stdout, settings)?;
+    if let Some(audio) = prepared
+        .as_ref()
+        .filter(|audio| (duration_seconds - audio.duration).abs() > 0.2)
+    {
+        return Err(format!(
+            "動画の長さが加工音と一致しません（動画 {duration_seconds:.3} 秒、加工音 {:.3} 秒）。",
+            audio.duration
+        ));
+    }
     let size_bytes = std::fs::metadata(temp_path)
         .map_err(|error| format!("出力ファイルを確認できません: {error}"))?
         .len();
@@ -331,6 +467,7 @@ mod tests {
             VisualKind::Png,
             "temp.mp4",
             OutputSettings::default(),
+            None,
         );
         assert!(args.windows(2).any(|pair| pair == ["-i", "cover %d.png"]));
         assert!(args.windows(2).any(|pair| pair == ["-i", "music file.mp3"]));
@@ -350,6 +487,7 @@ mod tests {
             VisualKind::Gif,
             "temp.mp4",
             OutputSettings::default(),
+            None,
         );
         assert!(args.windows(2).any(|pair| pair == ["-f", "gif"]));
         assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "1"]));
@@ -411,6 +549,7 @@ mod tests {
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
                 OutputSettings::default(),
+                &[],
                 &EncodeJob::default(),
             )
             .unwrap();
@@ -422,6 +561,7 @@ mod tests {
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
                 OutputSettings::default(),
+                &[],
                 &EncodeJob::default(),
             )
             .is_err());
@@ -500,6 +640,7 @@ mod tests {
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
                 OutputSettings::default(),
+                &[],
                 &EncodeJob::default(),
             )
             .unwrap();
@@ -539,7 +680,7 @@ mod tests {
         };
         assert!(cover.validate().is_ok());
         assert!(cover.filter().contains("crop=1080:1920"));
-        let args = encoder_args("a.mp3", "b.png", VisualKind::Png, "c.mp4", cover);
+        let args = encoder_args("a.mp3", "b.png", VisualKind::Png, "c.mp4", cover, None);
         for expected in [["-framerate", "60"], ["-r", "60"], ["-crf", "16"]] {
             assert!(args.windows(2).any(|pair| pair == expected));
         }
@@ -603,6 +744,7 @@ mod tests {
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
                 settings,
+                &[],
                 &EncodeJob::default(),
             )
             .unwrap();
@@ -650,6 +792,7 @@ mod tests {
                     cover.to_str().unwrap(),
                     output.to_str().unwrap(),
                     OutputSettings::default(),
+                    &[],
                     &job,
                 )
             });
@@ -677,10 +820,160 @@ mod tests {
             cover.to_str().unwrap(),
             output.to_str().unwrap(),
             OutputSettings::default(),
+            &[],
             &EncodeJob::default(),
         )
         .unwrap();
         assert!(info.size_bytes > 0);
         assert!(output.is_file());
+    }
+
+    #[test]
+    fn uses_explicit_duration_for_prepared_audio() {
+        let args = encoder_args(
+            "a.mp3",
+            "b.png",
+            VisualKind::Png,
+            "out.mp4",
+            OutputSettings::default(),
+            None,
+        );
+        assert!(!args.iter().any(|arg| arg == "-af"));
+        let args = encoder_args(
+            "filtered.wav",
+            "b.png",
+            VisualKind::Png,
+            "out.mp4",
+            OutputSettings::default(),
+            Some("3.200000"),
+        );
+        assert!(args.windows(2).any(|pair| pair == ["-f", "wav"]));
+        assert!(args.windows(2).any(|pair| pair == ["-t", "3.200000"]));
+        assert!(!args.iter().any(|arg| arg == "-shortest" || arg == "-af"));
+    }
+
+    fn audio_rms(path: &Path) -> f64 {
+        let output = Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-ss",
+                "1",
+                "-i",
+                path.to_str().unwrap(),
+                "-map",
+                "0:a:0",
+                "-t",
+                "1",
+                "-f",
+                "f32le",
+                "-acodec",
+                "pcm_f32le",
+                "-",
+            ])
+            .unwrap();
+        let (samples, remainder) = output.stdout.as_chunks::<4>();
+        assert!(remainder.is_empty());
+        assert!(!samples.is_empty());
+        let sum: f64 = samples
+            .iter()
+            .map(|sample| f64::from(f32::from_le_bytes(*sample)).powi(2))
+            .sum();
+        (sum / samples.len() as f64).sqrt()
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with audio filters, libmp3lame, libx264, AAC and FFprobe"]
+    fn encodes_with_audio_filter_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("song.mp3");
+        let image = dir.path().join("cover.png");
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=1000:sample_rate=48000:duration=3.2",
+                "-c:a",
+                "libmp3lame",
+                audio.to_str().unwrap(),
+            ])
+            .unwrap();
+        image::DynamicImage::new_rgb8(512, 512)
+            .save(&image)
+            .unwrap();
+        let original_bytes = std::fs::read(&audio).unwrap();
+        let settings = OutputSettings {
+            width: 1080,
+            height: 1080,
+            ..OutputSettings::default()
+        };
+        let cases = [
+            ("original", "[]"),
+            (
+                "disabled",
+                r#"[{"enabled":false,"filter":{"kind":"gain","gainDb":-6}}]"#,
+            ),
+            (
+                "gain",
+                r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#,
+            ),
+            (
+                "combined",
+                r#"[
+                    {"enabled":true,"filter":{"kind":"noiseReduction","reductionDb":6,"noiseFloorDb":-50}},
+                    {"enabled":true,"filter":{"kind":"highPass","frequencyHz":80}},
+                    {"enabled":true,"filter":{"kind":"lowPass","frequencyHz":12000}},
+                    {"enabled":true,"filter":{"kind":"equalizer","frequencyHz":1000,"q":1,"gainDb":3}},
+                    {"enabled":true,"filter":{"kind":"gain","gainDb":-6}},
+                    {"enabled":true,"filter":{"kind":"loudness","targetLufs":-14,"truePeakDb":-1.5}},
+                    {"enabled":true,"filter":{"kind":"limiter","ceilingDb":-1}}
+                ]"#,
+            ),
+        ];
+        let mut levels = Vec::new();
+        for (name, json) in cases {
+            let filters: Vec<audio_filters::FilterEntry> = serde_json::from_str(json).unwrap();
+            let output = dir.path().join(format!("{name}.mp4"));
+            let info = encode_video(
+                audio.to_str().unwrap(),
+                image.to_str().unwrap(),
+                output.to_str().unwrap(),
+                settings,
+                &filters,
+                &EncodeJob::default(),
+            )
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+            assert!((info.duration_seconds - 3.2).abs() < 0.2, "{name}");
+            levels.push(audio_rms(&output));
+        }
+        assert!((levels[1] / levels[0] - 1.0).abs() < 0.01);
+        assert!((levels[2] / levels[0] - 10_f64.powf(-6.0 / 20.0)).abs() < 0.03);
+        assert!(levels[3].is_finite() && levels[3] > 0.0);
+        assert_eq!(std::fs::read(&audio).unwrap(), original_bytes);
+
+        let invalid: Vec<audio_filters::FilterEntry> =
+            serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":99}}]"#)
+                .unwrap();
+        let output = dir.path().join("invalid.mp4");
+        assert!(encode_video(
+            audio.to_str().unwrap(),
+            image.to_str().unwrap(),
+            output.to_str().unwrap(),
+            settings,
+            &invalid,
+            &EncodeJob::default(),
+        )
+        .is_err());
+        assert!(!output.exists());
+        assert!(!std::fs::read_dir(dir.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".music-video-maker-")
+        }));
     }
 }

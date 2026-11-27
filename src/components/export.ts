@@ -1,8 +1,9 @@
 import { getSelectedAudio } from "./audio-source";
+import { getFilterChain } from "./audio-filters";
 import { getSelectedVisual } from "./visual-source";
 import { cancelEncode, encodeVideo, getEncodeProgress, selectOutput, type OutputSettings } from "../services/video";
 
-export function initializeExport(available: boolean): () => void {
+export function initializeExport(available: boolean, refreshPreview: () => void): () => void {
   const audioButton = document.querySelector<HTMLButtonElement>("#select-audio");
   const visualButton = document.querySelector<HTMLButtonElement>("#select-visual");
   const outputButton = document.querySelector<HTMLButtonElement>("#select-output");
@@ -17,7 +18,9 @@ export function initializeExport(available: boolean): () => void {
   const fit = document.querySelector<HTMLSelectElement>("#fit");
   const quality = document.querySelector<HTMLSelectElement>("#quality");
   const preview = document.querySelector<HTMLElement>("#visual-preview");
-  if (!fieldset || !resolution || !fps || !fit || !quality || !preview ||
+  const filterPanel = document.querySelector<HTMLElement>("#filter-title")?.parentElement;
+  const filterSummary = document.querySelector<HTMLElement>("#export-filter-summary");
+  if (!filterPanel || !filterSummary || !fieldset || !resolution || !fps || !fit || !quality || !preview ||
       !audioButton || !visualButton || !outputButton || !startButton ||
       !outputName || !status || !progress || !cancelButton) {
     throw new Error("Missing export elements");
@@ -43,9 +46,19 @@ export function initializeExport(available: boolean): () => void {
     return { width, height, fps: frames, crf, fit: mode };
   }
 
+  function validFilterInputs(): boolean {
+    return Array.from(filterPanel!.querySelectorAll<HTMLInputElement>("input[type=number], input[type=range]"))
+      .every(input => input.matches(":disabled") || (Number.isFinite(input.valueAsNumber) && input.validity.valid));
+  }
+
   function refresh(): void {
     const settings = readSettings();
     fieldset!.disabled = !available || encoding;
+    for (const section of filterPanel!.querySelectorAll<HTMLFieldSetElement>(":scope > fieldset")) {
+      section.disabled = !available || encoding;
+    }
+    const activeCount = getFilterChain().filter(entry => entry.enabled).length;
+    filterSummary!.textContent = activeCount ? `音声フィルタ: ${activeCount} 種類を適用` : "音声フィルタ: なし";
     cancelButton!.disabled = !encoding || !canCancel || cancelRequested;
     if (settings) {
       preview!.dataset.resolution = resolution!.value;
@@ -56,16 +69,22 @@ export function initializeExport(available: boolean): () => void {
     outputButton!.disabled = !available || encoding || choosingOutput;
     startButton!.disabled = !available || encoding || choosingOutput ||
       audioButton!.disabled || visualButton!.disabled ||
-      !audio || !visual || !outputPath || !settings;
+      !audio || !visual || !outputPath || !settings || !validFilterInputs();
     if (encoding || choosingOutput) return;
     progress!.value = 0;
     status!.textContent = !available ? "FFmpegとFFprobeが必要です。" :
       !audio || !visual || !outputPath ? "音声・画像と保存先を選択してください。" :
       !settings ? "出力設定が無効です。" :
+      !validFilterInputs() ? "音声フィルタの設定値を確認してください。" :
       `${settings.width} × ${settings.height} / ${settings.fps} fps / CRF ${settings.crf} で生成できます。`;
   }
 
   fieldset.addEventListener("change", refresh);
+  filterPanel.addEventListener("input", refresh);
+  filterPanel.addEventListener("change", refresh);
+  filterPanel.addEventListener("click", event => {
+    if (event.target instanceof HTMLButtonElement && event.target.id.endsWith("-reset")) refresh();
+  });
 
   outputButton.addEventListener("click", async () => {
     choosingOutput = true;
@@ -110,7 +129,8 @@ export function initializeExport(available: boolean): () => void {
         ? Math.min(99, Math.max(0, info.processedSeconds / info.durationSeconds * 100))
         : 0;
       progress!.value = percent;
-      status!.textContent = `動画を生成しています… ${Math.floor(percent)}%`;
+      const stage = info.phase === "filtering" ? "音声を加工しています" : "動画を生成しています";
+      status!.textContent = `${stage}… ${Math.floor(percent)}%`;
     } catch {
       // Progress transport errors must not interrupt the actual encode.
     }
@@ -142,7 +162,8 @@ export function initializeExport(available: boolean): () => void {
     const audio = getSelectedAudio();
     const visual = getSelectedVisual();
     const settings = readSettings();
-    if (startButton.disabled || !audio || !visual || !outputPath || !settings) return;
+    if (startButton.disabled || !audio || !visual || !outputPath || !settings || !validFilterInputs()) return;
+    const filters = getFilterChain();
     const id = ++nextJobId;
     activeJobId = id;
     cancelRequested = false;
@@ -150,6 +171,7 @@ export function initializeExport(available: boolean): () => void {
     encoding = true;
     audioButton.disabled = true;
     visualButton.disabled = true;
+    refreshPreview();
     refresh();
     progress.removeAttribute("value");
     status.textContent = "素材を確認しています…";
@@ -162,7 +184,7 @@ export function initializeExport(available: boolean): () => void {
     let resultMessage: string;
     let succeeded = false;
     try {
-      const info = await encodeVideo(audio.path, visual.path, outputPath, settings, id);
+      const info = await encodeVideo(audio.path, visual.path, outputPath, settings, filters, id);
       succeeded = true;
       resultMessage = `生成完了 · ${info.durationSeconds.toFixed(1)} 秒 · ${(info.sizeBytes / 1024 / 1024).toFixed(2)} MiB`;
       // Require a new destination for the next export; never overwrite.
@@ -179,6 +201,7 @@ export function initializeExport(available: boolean): () => void {
       encoding = false;
       audioButton.disabled = false;
       visualButton.disabled = false;
+      refreshPreview();
       refresh();
     }
     progress.value = succeeded ? 100 : 0;

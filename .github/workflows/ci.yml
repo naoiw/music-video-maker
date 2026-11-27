@@ -68,6 +68,10 @@ jobs:
           ffprobe -version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path src-tauri/Cargo.toml video::tests::encodes_ -- --ignored --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml audio_filters::tests::processes_ -- --ignored
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml audio_preview::tests::renders_ -- --ignored
       - name: Build desktop executable
         run: npm run desktop:build
       - name: Upload executable for smoke testing
