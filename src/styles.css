@@ -72,3 +72,6 @@ summary { cursor: pointer; }
 .audio-preview audio { width: 100%; }
 .audio-preview .preview-controls { justify-content: flex-start; margin: 0; }
 .audio-preview button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+
+/* Native file drop feedback (the entire desktop window accepts files). */
+.panel[data-drop-active="true"] { outline: 2px dashed currentColor; outline-offset: -5px; }

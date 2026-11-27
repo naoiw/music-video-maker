@@ -1,4 +1,4 @@
-import { selectVisual, type VisualSource } from "../services/visual";
+import { loadVisual, selectVisual, type VisualSource } from "../services/visual";
 
 let selectedVisual: VisualSource | null = null;
 
@@ -6,7 +6,7 @@ export function getSelectedVisual(): VisualSource | null {
   return selectedVisual;
 }
 
-export function initializeVisualSource(onChange: () => void = () => {}): void {
+export function initializeVisualSource(onChange: () => void = () => {}): (path?: string) => Promise<void> {
   const button = document.querySelector<HTMLButtonElement>("#select-visual");
   const name = document.querySelector<HTMLElement>("#visual-name");
   const details = document.querySelector<HTMLElement>("#visual-details");
@@ -17,12 +17,13 @@ export function initializeVisualSource(onChange: () => void = () => {}): void {
   }
 
   button.disabled = false;
-  button.addEventListener("click", async () => {
+  const load = async (path?: string): Promise<void> => {
+    if (button.disabled) return;
     button.disabled = true;
     onChange();
     status.textContent = "画像を確認しています…";
     try {
-      const selection = await selectVisual();
+      const selection = (path === undefined ? await selectVisual() : await loadVisual(path));
       if (!selection) {
         status.textContent = "";
         return;
@@ -50,5 +51,7 @@ export function initializeVisualSource(onChange: () => void = () => {}): void {
       button.disabled = false;
       onChange();
     }
-  });
+  };
+  button.addEventListener("click", () => { void load(); });
+  return load;
 }

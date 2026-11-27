@@ -2,6 +2,7 @@ import "./styles.css";
 import { initializeAudioSource } from "./components/audio-source";
 import { initializeAudioFilters } from "./components/audio-filters";
 import { initializeAudioPreview } from "./components/audio-preview";
+import { initializeSourceDrop } from "./components/source-drop";
 import { initializeExport } from "./components/export";
 import { initializeVisualSource } from "./components/visual-source";
 import { getMediaToolStatus, getRuntimeInfo } from "./services/runtime";
@@ -21,7 +22,7 @@ async function initialize(): Promise<void> {
       return;
     }
     let refreshExport = (): void => {};
-    initializeVisualSource(() => refreshExport());
+    const loadVisual = initializeVisualSource(() => refreshExport());
     const result = await getMediaToolStatus();
     if (!result) {
       media.textContent = "メディア処理環境を取得できません。";
@@ -30,16 +31,21 @@ async function initialize(): Promise<void> {
     const available = Boolean(result.ffmpeg.version && result.ffprobe.version);
     const refreshFilters = initializeAudioFilters(available);
     const refreshPreview = initializeAudioPreview(available);
-    if (result.ffprobe.version) initializeAudioSource(() => {
+    const loadAudio = result.ffprobe.version ? initializeAudioSource(() => {
       refreshFilters();
       refreshPreview();
       refreshExport();
-    });
-    else {
+    }) : null;
+    if (!loadAudio) {
       const audioStatus = document.querySelector<HTMLElement>("#audio-status");
       if (audioStatus) audioStatus.textContent = "FFprobeが必要です。実行環境を確認してください。";
     }
     refreshExport = initializeExport(available, refreshPreview);
+    // Failure to register native drag/drop must not disable the existing dialogs.
+    await initializeSourceDrop(loadAudio, loadVisual).catch(error => {
+      const dropStatus = document.querySelector<HTMLElement>("#source-drop-status");
+      if (dropStatus) dropStatus.textContent = `ドラッグ＆ドロップを利用できません: ${String(error)}`;
+    });
     media.textContent = [
       `FFmpeg: ${result.ffmpeg.version ?? result.ffmpeg.error ?? "未検出"}`,
       `FFprobe: ${result.ffprobe.version ?? result.ffprobe.error ?? "未検出"}`,
