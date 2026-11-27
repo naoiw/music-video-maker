@@ -41,11 +41,7 @@ fn dimensions_are_supported(width: u32, height: u32) -> bool {
     width > 0 && height > 0 && u64::from(width) * u64::from(height) <= MAX_IMAGE_PIXELS
 }
 
-fn inspect_image(
-    name: String,
-    expected: ImageFormat,
-    bytes: &[u8],
-) -> Result<VisualInfo, String> {
+fn inspect_image(name: String, expected: ImageFormat, bytes: &[u8]) -> Result<VisualInfo, String> {
     if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
         return Err("画像が空、または 32 MiB を超えています。".into());
     }
