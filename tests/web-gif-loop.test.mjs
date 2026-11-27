@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { forceInfiniteGifLoop } from "../web/src/gif-loop.ts";
+import { prepareLoopingGif, gifTimelineFilter } from "../web/src/gif-loop.ts";
+const forceInfiniteGifLoop = bytes => prepareLoopingGif(bytes).bytes;
 
 const header = [71,73,70,56,57,97,1,0,1,0,0x80,0,0,255,0,0,0,0,255];
 const loop = count => [0x21,0xff,11,...Buffer.from("NETSCAPE2.0"),3,1,count&255,count>>8,0];
@@ -33,4 +34,20 @@ test("rejects truncated tables, missing trailers, unknown blocks and no images",
   for(const bad of [new Uint8Array(5),input().slice(0,15),input(frame).slice(0,-1),input([0x12]),input(comment),input([0x21,0xfe,255,1])]){
     assert.throws(()=>forceInfiniteGifLoop(bad),/GIF/);
   }
+});
+
+test("extracts each frame's delay in centiseconds, including fallback and reset", () => {
+  const gceDelay = n => [0x21,0xf9,4,0,n&255,n>>8,0,0];
+  const source = input(gceDelay(20),image,gceDelay(30),image,gceDelay(1),image,image,gceDelay(256),image);
+  assert.deepEqual(prepareLoopingGif(source).frameDelays,[20,30,10,10,256]);
+});
+test("generates exact constant and variable timing across GIF cycles", () => {
+  assert.equal(gifTimelineFilter([20,20]),"settb=1/100,setpts='N*20',fps=30");
+  assert.equal(gifTimelineFilter([10,30]),"settb=1/100,setpts='floor(N/2)*40+if(lt(mod(N,2),1),0,10)',fps=30");
+  assert.equal(gifTimelineFilter([10,20,30]),"settb=1/100,setpts='floor(N/3)*60+if(lt(mod(N,3),1),0,if(lt(mod(N,3),2),10,30))',fps=30");
+});
+test("bounds only the variable-delay expression and rejects invalid delay lists", () => {
+  assert.doesNotThrow(()=>gifTimelineFilter(Array(5000).fill(20)));
+  assert.throws(()=>gifTimelineFilter([...Array(4096).fill(20),30]),/4096/);
+  for(const delays of [[],[0],[1],[2.5],[65536],[NaN]])assert.throws(()=>gifTimelineFilter(delays),/GIF/);
 });
