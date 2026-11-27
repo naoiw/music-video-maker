@@ -26,11 +26,23 @@
       </section>
       <section class="panel" aria-labelledby="filter-title">
         <h2 id="filter-title">音声フィルタ</h2>
-        <fieldset disabled class="filters">
-          <label><input type="checkbox" /> ノイズ除去</label>
+        <fieldset id="noise-filter" disabled class="filters">
+          <label><input type="checkbox" id="noise-enabled" /> ノイズ除去（FFT）</label>
+          <fieldset id="noise-parameters" disabled class="filter-parameters">
+            <label for="noise-reduction">低減量 <output id="noise-reduction-value" for="noise-reduction">6 dB</output></label>
+            <input id="noise-reduction" type="range" min="1" max="30" step="1" value="6" />
+            <label for="noise-floor">ノイズフロア <output id="noise-floor-value" for="noise-floor">−50 dB</output></label>
+            <input id="noise-floor" type="range" min="-80" max="-20" step="1" value="-50" />
+            <button type="button" id="noise-reset">初期値に戻す</button>
+          </fieldset>
+          <p class="muted">強い設定では高音や残響なども失われる場合があります。</p>
+          <p id="noise-status" class="muted" role="status">ノイズ除去は無効です。</p>
+        </fieldset>
+        <fieldset disabled class="filters filter-pending">
           <label><input type="checkbox" /> 周波数調整</label>
           <label><input type="checkbox" /> 音量調整</label>
         </fieldset>
+        <p class="muted">現在は設定の確認のみ。試聴・MP4への適用は今後対応します。</p>
       </section>
     </div>
     <div class="column">
