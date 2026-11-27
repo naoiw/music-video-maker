@@ -30,7 +30,9 @@ try {
   run("ffmpeg",["-y","-f","lavfi","-i",benchmark?"testsrc2=size=1920x1080:rate=1":"color=c=red:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.png")]);
   run("ffmpeg",["-y","-f","lavfi","-i",benchmark?"testsrc=size=1920x1080:rate=1":"color=c=blue:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.jpg")]);
   // Generate two explicit RGB frames with distinct timestamps, independent of concat
-  // filter behavior across FFmpeg versions. The last frame also lasts 200 ms.
+  // filter behavior across FFmpeg versions. Use a palette generated from both
+  // exact source colors; the default RGB8 conversion/dithering can introduce
+  // red pixels at the top of a blue frame, which become visible in a cover crop.
   const frames=Buffer.alloc(64*48*3*2);
   for(let i=0;i<64*48;i++){frames[i*3]=255;frames[(64*48+i)*3+2]=255;}
   const raw=join(tmp,"gif-frames.rgb");
@@ -40,13 +42,18 @@ try {
     {name:"image.variable.gif",rate:10,first:0.1,last:0.3,loop:"1"}
   ]){
     const gif=join(tmp,name);
-    run("ffmpeg",["-y","-f","rawvideo","-pixel_format","rgb24","-video_size","64x48","-framerate",String(rate),"-i",raw,"-frames:v","2","-threads","1","-loop",loop,"-final_delay",String(Math.round(last*100)),gif]);
+    run("ffmpeg",["-y","-f","rawvideo","-pixel_format","rgb24","-video_size","64x48","-framerate",String(rate),"-i",raw,"-filter_complex_threads","1","-filter_complex","[0:v]split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=none","-frames:v","2","-threads","1","-loop",loop,"-final_delay",String(Math.round(last*100)),gif]);
     const gifInfo=JSON.parse(run("ffprobe",["-v","error","-ignore_loop","1","-select_streams","v:0","-show_frames","-show_entries","frame=pts_time,duration_time,pkt_duration_time","-of","json",gif]).toString());
     const gifFrames=gifInfo.frames;
     if(gifFrames.length!==2 || gifFrames.some((frame,i)=>Math.abs(Number(frame.pts_time)-(i?first:0))>0.001 || Math.abs(Number(frame.duration_time??frame.pkt_duration_time)-(i?last:first))>0.001 || !Number.isFinite(Number(frame.pts_time)) || !Number.isFinite(Number(frame.duration_time??frame.pkt_duration_time))))throw Error("Invalid GIF fixture timestamps: "+JSON.stringify(gifFrames));
-    const gifPixels=run("ffmpeg",["-v","error","-ignore_loop","1","-i",gif,"-vf","crop=2:2,scale=1:1,format=rgb24","-fps_mode","passthrough","-threads","1","-f","rawvideo","-"]);
-    if(gifPixels.length!==6||gifPixels[0]<180||gifPixels[2]>80||gifPixels[3]>80||gifPixels[5]<180)throw Error("Invalid GIF fixture colors: "+Array.from(gifPixels));
-    console.log("GIF fixture verified: "+name+" red "+first+"s, blue "+last+"s.");
+    const gifPixels=run("ffmpeg",["-v","error","-ignore_loop","1","-i",gif,"-vf","format=rgb24","-fps_mode","passthrough","-threads","1","-f","rawvideo","-"]);
+    // Verify every source pixel, including edges. A center-only sample missed
+    // the RGB8 dithering artifacts that triggered the portrait background test.
+    if(!gifPixels.equals(frames)){
+      const offset=gifPixels.findIndex((byte,i)=>byte!==frames[i]);
+      throw Error("Invalid GIF fixture RGB data: "+name+" length="+gifPixels.length+" expected="+frames.length+" first differing byte="+offset);
+    }
+    console.log("GIF fixture verified (all 6144 pixels): "+name+" red "+first+"s, blue "+last+"s.");
   }
   server=spawn(process.execPath,["node_modules/vite/bin/vite.js","preview","--config","vite.web.config.ts","--host","127.0.0.1"],{stdio:"inherit"});
   await wait(async()=> (await fetch(base)).ok);
@@ -139,7 +146,7 @@ try {
       const samples=animated?[]:[[0.1,ext==="png"?"red":"blue"],[1.3,ext==="png"?"red":"blue"]];
       // Decode once in presentation order. Pair every RGB sample with its actual PTS.
       // Avoid demuxer seek/keyframe differences obscuring the output timing.
-      const crops=fit==="blurred"?["crop=16:16","crop=16:16:"+(Math.floor(width/2)-8)+":20"]:["crop=16:16"];
+      const crops=fit==="blurred"?["crop=16:16","crop=16:16:"+(Math.floor(width/2)-8)+":20","crop=16:16:"+(Math.floor(width/2)-8)+":"+(height-36)]:["crop=16:16"];
       const decoded=JSON.parse(run("ffprobe",["-v","error","-select_streams","v:0","-show_frames","-show_entries","frame=best_effort_timestamp_time","-of","json",path]).toString()).frames;
       const times=decoded.map(f=>Number(f.best_effort_timestamp_time));
       if(!times.length||times.some((t,i)=>!Number.isFinite(t)||(i>0&&Math.abs(t-times[i-1]-1/fps)>0.001))||Math.abs(times[0])>0.001)throw Error("Invalid decoded frame timing: "+JSON.stringify(times));
