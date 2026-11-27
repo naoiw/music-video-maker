@@ -16,7 +16,7 @@ const cases = benchmark
 const results = [];
 const tmp = await mkdtemp(join(tmpdir(),"mvm-web-smoke-"));
 const base = "http://127.0.0.1:4173/music-video-maker/";
-const run = (cmd,args) => execFileSync(cmd,args,{stdio:["ignore","pipe","pipe"],timeout:120000});
+const run = (cmd,args) => execFileSync(cmd,args,{stdio:["ignore","pipe","pipe"],timeout:120000,maxBuffer:16*1024*1024});
 let chrome, server, ws;
 async function wait(fn, ms=30000) {
   const until = Date.now()+ms;
