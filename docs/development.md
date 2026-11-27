@@ -34,14 +34,14 @@
 
 Rust の依存クレートとビルド成果物は Swatinem/rust-cache でキャッシュする。
 対象ワークスペースは src-tauri、ターゲットディレクトリは src-tauri/target。
-src-tauri/Cargo.lock は Git 管理済み。現行 CI には lockfile がない場合の生成処理が残っている。
+src-tauri/Cargo.lock は Git 管理済みで、CI は --locked で検証する。
 キャッシュが存在しない場合も通常通りコンパイルする。
 
 - fmt、Clippy、単体テスト、FFmpeg 結合テスト、Windows 実行ファイル生成は従来通り必須の検証項目とする。
 - PR のキャッシュは GitHub Actions の PR スコープに保存されるため、develop での初回実行でもキャッシュの作成が必要になる場合がある。
 - CI の成功後、キャッシュの復元ログと各ステップの時間を比較する。保存・復元の時間も含めて評価する。
 - フロントエンドの依存管理は pnpm を標準とし、`pnpm-lock.yaml` と `src-tauri/Cargo.lock` を Git で管理する。通常は `pnpm install --frozen-lockfile` と Cargo の `--locked` を使用する。依存更新時のみ lockfile を再生成し、差分を確認する。
-- 現行 CI、Tauri のフック、setup.bat / build.bat の既定動作には npm が残っている。pnpm への完全統一は別途対応する。
+- package.json の packageManager に pnpm の版を固定する。CI、Tauri のフック、build.bat は pnpm に統一し、npm は setup.bat の pnpm 初回導入にのみ使用する。
 - ローカルでのビルド・テストのみへの変更は、キャッシュの効果を確認後に判断する。
 
 Issue の自動クローズは同一リポジトリの develop 向けマージ済み PR のみを対象にし、PR のコードを実行しない。main 向け PR は GitHub 標準のクローズ機能を利用する。
