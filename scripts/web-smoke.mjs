@@ -95,7 +95,8 @@ try {
     const info=JSON.parse(run("ffprobe",["-v","error","-show_streams","-show_format","-of","json",path]).toString());
     const v=info.streams.find(s=>s.codec_type==="video"),a=info.streams.find(s=>s.codec_type==="audio");
     const tolerance=benchmark?0.5:0.4;
-    if(v?.codec_name!=="h264"||v.width!==width||v.height!==height||v.pix_fmt!=="yuv420p"||v.r_frame_rate!=="30/1"||a?.codec_name!=="aac"||Math.abs(Number(info.format.duration)-seconds)>tolerance||Math.abs(Number(v.duration)-seconds)>tolerance||Math.abs(Number(a.duration)-seconds)>tolerance)throw Error("Invalid "+ext+" output: "+JSON.stringify(info));
+    const validDuration=value=>Number.isFinite(Number(value))&&Math.abs(Number(value)-seconds)<=tolerance;
+    if(v?.codec_name!=="h264"||v.width!==width||v.height!==height||v.pix_fmt!=="yuv420p"||v.r_frame_rate!=="30/1"||a?.codec_name!=="aac"||!validDuration(info.format.duration)||!validDuration(v.duration)||!validDuration(a.duration))throw Error("Invalid "+ext+" output: "+JSON.stringify(info));
     console.log(ext+": "+status+"; FFprobe passed.");
     const encodeSeconds=Number(status.match(/エンコード ([\d.]+) 秒/)?.[1]);
     if(!Number.isFinite(encodeSeconds)||encodeSeconds<=0)throw Error("Missing encode timing");
