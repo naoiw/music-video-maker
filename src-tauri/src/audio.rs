@@ -6,7 +6,7 @@ use std::path::Path;
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AudioInfo {
     name: String,
-    duration_seconds: f64,
+    pub(crate) duration_seconds: f64,
     sample_rate: u32,
     channels: u32,
     bit_rate: Option<u64>,

@@ -9,6 +9,13 @@ export interface OutputSettings {
   fit: "contain" | "cover";
 }
 
+export interface EncodeProgress {
+  phase: "preparing" | "encoding" | "verifying" | "saving";
+  durationSeconds: number;
+  processedSeconds: number;
+  cancelled: boolean;
+}
+
 export interface VideoInfo {
   durationSeconds: number;
   sizeBytes: number;
@@ -28,6 +35,15 @@ export async function encodeVideo(
   visualPath: string,
   outputPath: string,
   settings: OutputSettings,
+  jobId: number,
 ): Promise<VideoInfo> {
-  return invoke<VideoInfo>("encode_video", { audioPath, visualPath, outputPath, settings });
+  return invoke<VideoInfo>("encode_video", { audioPath, visualPath, outputPath, settings, jobId });
+}
+
+export function getEncodeProgress(jobId: number): Promise<EncodeProgress | null> {
+  return invoke<EncodeProgress | null>("encode_progress", { jobId });
+}
+
+export function cancelEncode(jobId: number): Promise<boolean> {
+  return invoke<boolean>("cancel_encode", { jobId });
 }

@@ -1,4 +1,5 @@
-use crate::{audio, ffmpeg::Tool, visual};
+use crate::{audio, encode_job, ffmpeg::Tool, visual};
+use encode_job::{EncodeJob, Phase};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
@@ -114,6 +115,9 @@ fn encoder_args(
         "-loglevel",
         "error",
         "-nostdin",
+        "-nostats",
+        "-progress",
+        "pipe:1",
         "-xerror",
         "-y", // Only the private temporary file can be overwritten.
         "-protocol_whitelist",
@@ -247,7 +251,9 @@ pub(crate) fn encode_video(
     visual_path: &str,
     output_path: &str,
     settings: OutputSettings,
+    job: &EncodeJob,
 ) -> Result<VideoInfo, String> {
+    job.check_cancelled()?;
     settings.validate()?;
     let _guard = ENCODE_LOCK
         .try_lock()
@@ -256,7 +262,9 @@ pub(crate) fn encode_video(
     let parent = validate_destination(destination)?;
 
     // Revalidate sources at export time; do not trust GUI metadata.
-    audio::probe_audio(audio_path)?;
+    let audio_info = audio::probe_audio(audio_path)?;
+    job.set_duration(audio_info.duration_seconds);
+    job.check_cancelled()?;
     let image = visual::load_visual(visual_path)?;
     let source = match image.format {
         "PNG" => VisualKind::Png,
@@ -265,6 +273,7 @@ pub(crate) fn encode_video(
         _ => return Err("非対応の画像形式です。".into()),
     };
     drop(image);
+    job.check_cancelled()?;
 
     // Stage on the same filesystem; publish only after successful verification.
     let temporary = tempfile::Builder::new()
@@ -279,7 +288,9 @@ pub(crate) fn encode_video(
 
     let args = encoder_args(audio_path, visual_path, source, temp_path, settings);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    Tool::Ffmpeg.run(&args)?;
+    encode_job::run_ffmpeg(&args, job)?;
+    job.set_phase(Phase::Verifying);
+    job.check_cancelled()?;
 
     let probe = Tool::Ffprobe.run(&[
         "-v",
@@ -297,6 +308,7 @@ pub(crate) fn encode_video(
     let size_bytes = std::fs::metadata(temp_path)
         .map_err(|error| format!("出力ファイルを確認できません: {error}"))?
         .len();
+    job.begin_saving()?;
     temporary
         .persist_noclobber(destination)
         .map_err(|error| format!("動画を保存できません: {error}"))?;
@@ -399,6 +411,7 @@ mod tests {
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
                 OutputSettings::default(),
+                &EncodeJob::default(),
             )
             .unwrap();
             assert!((info.duration_seconds - 2.3).abs() < 0.2);
@@ -409,6 +422,7 @@ mod tests {
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
                 OutputSettings::default(),
+                &EncodeJob::default(),
             )
             .is_err());
         }
@@ -486,6 +500,7 @@ mod tests {
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
                 OutputSettings::default(),
+                &EncodeJob::default(),
             )
             .unwrap();
             assert!((info.duration_seconds - 2.3).abs() < 0.2);
@@ -588,10 +603,84 @@ mod tests {
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
                 settings,
+                &EncodeJob::default(),
             )
             .unwrap();
             assert!((info.duration_seconds - 1.2).abs() < 0.2);
             assert!(info.size_bytes > 0);
         }
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with libmp3lame, libx264, AAC and FFprobe"]
+    fn encodes_cancel_and_retry() {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("song.mp3");
+        let cover = dir.path().join("cover.png");
+        let output = dir.path().join("cancelled.mp4");
+        let fixture = |duration: &str| {
+            Tool::Ffmpeg
+                .run(&[
+                    "-v",
+                    "error",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    duration,
+                    "-c:a",
+                    "libmp3lame",
+                    audio.to_str().unwrap(),
+                ])
+                .unwrap();
+        };
+        fixture("sine=frequency=440:duration=30");
+        image::DynamicImage::new_rgb8(640, 480)
+            .save(&cover)
+            .unwrap();
+
+        let job = EncodeJob::default();
+        let result = thread::scope(|scope| {
+            let worker = scope.spawn(|| {
+                encode_video(
+                    audio.to_str().unwrap(),
+                    cover.to_str().unwrap(),
+                    output.to_str().unwrap(),
+                    OutputSettings::default(),
+                    &job,
+                )
+            });
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while job.snapshot().processed_seconds <= 0.0 && Instant::now() < deadline {
+                if worker.is_finished() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            let saw_progress = job.snapshot().processed_seconds > 0.0;
+            let accepted = job.request_cancel();
+            let result = worker.join().unwrap();
+            assert!(saw_progress);
+            assert!(accepted);
+            result
+        });
+        assert_eq!(result.unwrap_err(), encode_job::CANCELLED);
+        assert!(!output.exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+
+        fixture("sine=frequency=440:duration=1.2");
+        let info = encode_video(
+            audio.to_str().unwrap(),
+            cover.to_str().unwrap(),
+            output.to_str().unwrap(),
+            OutputSettings::default(),
+            &EncodeJob::default(),
+        )
+        .unwrap();
+        assert!(info.size_bytes > 0);
+        assert!(output.is_file());
     }
 }
