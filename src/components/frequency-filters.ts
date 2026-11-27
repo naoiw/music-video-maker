@@ -49,10 +49,13 @@ export function initializeFrequencyFilters(available: boolean): () => void {
     eqParameters.disabled = !available || !eqEnabled.checked;
 
     filters = [
-      { enabled: highEnabled.checked, filter: { kind: "highPass", frequencyHz: high.valueAsNumber } },
-      { enabled: lowEnabled.checked, filter: { kind: "lowPass", frequencyHz: low.valueAsNumber } },
+      { enabled: highEnabled.checked, filter: { kind: "highPass", frequencyHz: highEnabled.checked ? high.valueAsNumber : defaults.highPassHz } },
+      { enabled: lowEnabled.checked, filter: { kind: "lowPass", frequencyHz: lowEnabled.checked ? low.valueAsNumber : defaults.lowPassHz } },
       { enabled: eqEnabled.checked, filter: {
-        kind: "equalizer", frequencyHz: center.valueAsNumber, q: q.valueAsNumber, gainDb: gain.valueAsNumber,
+        kind: "equalizer",
+        frequencyHz: eqEnabled.checked ? center.valueAsNumber : defaults.eqHz,
+        q: eqEnabled.checked ? q.valueAsNumber : defaults.q,
+        gainDb: eqEnabled.checked ? gain.valueAsNumber : defaults.gainDb,
       } },
     ];
     if (!available) {

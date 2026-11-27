@@ -35,6 +35,13 @@ enum AudioFilter {
     Gain {
         gain_db: f64,
     },
+    Loudness {
+        target_lufs: f64,
+        true_peak_db: f64,
+    },
+    Limiter {
+        ceiling_db: f64,
+    },
 }
 
 fn bounded(value: f64, min: f64, max: f64, name: &str) -> Result<(), String> {
@@ -87,6 +94,23 @@ impl AudioFilter {
             Self::Gain { gain_db } => {
                 bounded(gain_db, -24.0, 24.0, "ゲイン (dB)")?;
                 Ok(format!("volume={gain_db}dB"))
+            }
+            Self::Loudness {
+                target_lufs,
+                true_peak_db,
+            } => {
+                bounded(target_lufs, -24.0, -10.0, "目標 LUFS")?;
+                bounded(true_peak_db, -9.0, -1.0, "True Peak (dBTP)")?;
+                Ok(format!(
+                    "loudnorm=I={target_lufs}:LRA=11:TP={true_peak_db}:linear=false,aresample={sample_rate}"
+                ))
+            }
+            Self::Limiter { ceiling_db } => {
+                bounded(ceiling_db, -12.0, -0.5, "ピーク上限 (dBFS)")?;
+                let limit = 10_f64.powf(ceiling_db / 20.0);
+                Ok(format!(
+                    "alimiter=limit={limit}:attack=5:release=50:level=false:latency=true"
+                ))
             }
         }
     }
@@ -354,5 +378,93 @@ mod tests {
         assert!(response_db(eq(), 100).abs() < 0.5);
         assert!((response_db(eq(), 1000) - 6.0).abs() < 0.25);
         assert!(response_db(eq(), 10_000).abs() < 0.5);
+    }
+
+    #[test]
+    fn validates_volume_settings_and_order() {
+        let json = r#"[
+            {"enabled":true,"filter":{"kind":"gain","gainDb":6}},
+            {"enabled":true,"filter":{"kind":"loudness","targetLufs":-14,"truePeakDb":-1.5}},
+            {"enabled":true,"filter":{"kind":"limiter","ceilingDb":-1}}
+        ]"#;
+        let entries: Vec<FilterEntry> = serde_json::from_str(json).unwrap();
+        let graph = compile(&entries, 44_100).unwrap().unwrap();
+        assert!(graph.starts_with(
+            "volume=6dB,loudnorm=I=-14:LRA=11:TP=-1.5:linear=false,aresample=44100,alimiter="
+        ));
+        assert!(graph.ends_with(":level=false:latency=true"));
+        for (target_lufs, true_peak_db) in [(-25.0, -1.5), (-9.0, -1.5), (-14.0, 0.0)] {
+            let filter = AudioFilter::Loudness {
+                target_lufs,
+                true_peak_db,
+            };
+            assert!(filter.expression(48_000).is_err());
+        }
+        for ceiling_db in [-13.0, 0.0, f64::NAN] {
+            let filter = AudioFilter::Limiter { ceiling_db };
+            assert!(filter.expression(48_000).is_err());
+        }
+    }
+
+    fn peak_amplitude(bytes: &[u8]) -> f32 {
+        let (chunks, remainder) = bytes.as_chunks::<4>();
+        assert!(remainder.is_empty());
+        chunks
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk).abs())
+            .fold(0.0, f32::max)
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with loudnorm, alimiter and ebur128"]
+    fn processes_volume_and_peak_protection() {
+        let gain_only = compile(&[gain(true, 24.0)], 48_000).unwrap().unwrap();
+        let unprotected = pcm(Some(&gain_only));
+        assert!(peak_amplitude(&unprotected) > 1.0);
+        let limiter = FilterEntry {
+            enabled: true,
+            filter: AudioFilter::Limiter { ceiling_db: -1.0 },
+        };
+        let graph = compile(&[gain(true, 24.0), limiter], 48_000)
+            .unwrap()
+            .unwrap();
+        let protected = pcm(Some(&graph));
+        assert_eq!(protected.len(), unprotected.len());
+        let ceiling = 10_f32.powf(-1.0 / 20.0);
+        assert!(peak_amplitude(&protected) <= ceiling + 0.001);
+        assert!(peak_amplitude(&protected) > ceiling - 0.01);
+
+        let loudness = FilterEntry {
+            enabled: true,
+            filter: AudioFilter::Loudness {
+                target_lufs: -14.0,
+                true_peak_db: -1.5,
+            },
+        };
+        let graph = compile(&[loudness], 48_000).unwrap().unwrap();
+        let analysis = format!("{graph},ebur128=peak=true");
+        let output = Tool::Ffmpeg
+            .run(&[
+                "-hide_banner",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=1000:sample_rate=48000:duration=6",
+                "-af",
+                &analysis,
+                "-f",
+                "null",
+                "-",
+            ])
+            .unwrap();
+        let report = String::from_utf8_lossy(&output.stderr);
+        let summary = report.rsplit("Integrated loudness:").next().unwrap();
+        let integrated = summary
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("I:"))
+            .and_then(|value| value.split_whitespace().next())
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap();
+        assert!((integrated + 14.0).abs() < 0.5, "{report}");
     }
 }

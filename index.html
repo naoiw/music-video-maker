@@ -57,8 +57,25 @@
           <button type="button" id="frequency-reset">初期値に戻す</button>
           <p id="frequency-status" class="muted" role="status">周波数フィルタは無効です。</p>
         </fieldset>
-        <fieldset disabled class="filters filter-pending">
-          <label><input type="checkbox" /> 音量調整</label>
+        <fieldset disabled id="volume-filters" class="filters filter-pending">
+          <h3>音量調整</h3>
+          <label><input type="checkbox" id="gain-enabled" /> ゲイン調整</label>
+          <fieldset disabled id="gain-parameters" class="filter-parameters">
+            <label for="volume-gain">ゲイン <output id="volume-gain-value" for="volume-gain">0 dB</output></label>
+            <input id="volume-gain" type="range" min="-24" max="24" step="0.5" value="0" />
+          </fieldset>
+          <label><input type="checkbox" id="loudness-enabled" /> ラウドネス正規化</label>
+          <fieldset disabled id="loudness-parameters" class="frequency-parameters fields">
+            <label>目標音量 (LUFS)<input id="loudness-target" type="number" min="-24" max="-10" step="0.5" value="-14" /></label>
+            <label>True Peak 上限 (dBTP)<input id="loudness-peak" type="number" min="-9" max="-1" step="0.5" value="-1.5" /></label>
+          </fieldset>
+          <label><input type="checkbox" id="limiter-enabled" /> ピークリミッター</label>
+          <fieldset disabled id="limiter-parameters" class="frequency-parameters fields">
+            <label>サンプルピーク上限 (dBFS)<input id="limiter-ceiling" type="number" min="-12" max="-0.5" step="0.5" value="-1" /></label>
+          </fieldset>
+          <button type="button" id="volume-reset">初期値に戻す</button>
+          <p class="muted">音量を上げるとクリッピングが生じる場合があります。リミッターは加工の最後に適用します。</p>
+          <p id="volume-status" class="muted" role="status">音量フィルタは無効です。</p>
         </fieldset>
         <p class="muted">現在は設定の確認のみ。試聴・MP4への適用は今後対応します。</p>
       </section>
