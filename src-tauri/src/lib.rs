@@ -98,6 +98,7 @@ async fn encode_video(
     visual_path: String,
     output_path: String,
     settings: video::OutputSettings,
+    filters: Vec<audio_filters::FilterEntry>,
     job_id: u32,
 ) -> Result<video::VideoInfo, String> {
     let active = encode_job::ActiveJob::register(job_id)?;
@@ -107,6 +108,7 @@ async fn encode_video(
             &visual_path,
             &output_path,
             settings,
+            &filters,
             active.job(),
         );
         active.job().check_cancelled()?;

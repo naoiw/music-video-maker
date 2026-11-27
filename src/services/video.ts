@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import type { FilterChain } from "./audio-filters";
 
 export interface OutputSettings {
   width: number;
@@ -35,9 +36,10 @@ export async function encodeVideo(
   visualPath: string,
   outputPath: string,
   settings: OutputSettings,
+  filters: FilterChain,
   jobId: number,
 ): Promise<VideoInfo> {
-  return invoke<VideoInfo>("encode_video", { audioPath, visualPath, outputPath, settings, jobId });
+  return invoke<VideoInfo>("encode_video", { audioPath, visualPath, outputPath, settings, filters, jobId });
 }
 
 export function getEncodeProgress(jobId: number): Promise<EncodeProgress | null> {
