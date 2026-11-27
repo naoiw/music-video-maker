@@ -197,8 +197,10 @@ mod tests {
     fn rms(bytes: &[u8]) -> f64 {
         let mut sum = 0.0;
         let mut count = 0;
-        for chunk in bytes.chunks_exact(4) {
-            let sample = f64::from(f32::from_le_bytes(chunk.try_into().unwrap()));
+        let (chunks, remainder) = bytes.as_chunks::<4>();
+        assert!(remainder.is_empty());
+        for chunk in chunks {
+            let sample = f64::from(f32::from_le_bytes(*chunk));
             assert!(sample.is_finite());
             sum += sample * sample;
             count += 1;
