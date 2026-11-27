@@ -11,7 +11,7 @@ export interface OutputSettings {
 }
 
 export interface EncodeProgress {
-  phase: "preparing" | "encoding" | "verifying" | "saving";
+  phase: "preparing" | "filtering" | "encoding" | "verifying" | "saving";
   durationSeconds: number;
   processedSeconds: number;
   cancelled: boolean;

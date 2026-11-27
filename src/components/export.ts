@@ -129,7 +129,8 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
         ? Math.min(99, Math.max(0, info.processedSeconds / info.durationSeconds * 100))
         : 0;
       progress!.value = percent;
-      status!.textContent = `動画を生成しています… ${Math.floor(percent)}%`;
+      const stage = info.phase === "filtering" ? "音声を加工しています" : "動画を生成しています";
+      status!.textContent = `${stage}… ${Math.floor(percent)}%`;
     } catch {
       // Progress transport errors must not interrupt the actual encode.
     }
