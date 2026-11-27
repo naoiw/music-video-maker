@@ -52,3 +52,7 @@ Music Video Maker/
 ## 自動配布（#25）
 
 リリース時は上記の審査済み3入力を HTTPS 取得先（binaryArchive.url、sourceArchiveUrl、noticesUrl）と SHA-256 で固定し、CI が取得・検証してからパッケージを生成する。ローカル生成時は引き続きファイルを直接指定できる。詳細は [リリース手順](release.md) を参照。
+
+## 利用者向け案内（#26）
+
+ZIP に同梱する README.txt は起動・動画生成・設定・トラブルシューティングを含む簡易マニュアルとする。詳細は [ユーザーガイド](user-guide.md) を参照。初回公開前に導入手順を Windows 実機で確認する。
