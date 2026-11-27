@@ -19,7 +19,7 @@ try {
   run("ffmpeg",["-y","-f","lavfi","-i","color=c=red:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.png")]);
   run("ffmpeg",["-y","-f","lavfi","-i","color=c=blue:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.jpg")]);
   run("ffmpeg",["-y","-f","lavfi","-i","testsrc=size=64x48:rate=5:duration=0.6","-threads","1",join(tmp,"image.gif")]);
-  server=spawn("pnpm",["web:preview"],{stdio:"inherit",shell:process.platform==="win32"});
+  server=spawn(process.execPath,["node_modules/vite/bin/vite.js","preview","--config","vite.web.config.ts","--host","127.0.0.1"],{stdio:"inherit"});
   await wait(async()=> (await fetch(base)).ok);
   chrome=spawn(process.env.CHROME_BIN||"google-chrome",["--headless","--no-sandbox","--disable-dev-shm-usage","--no-first-run","--remote-debugging-port=0","--user-data-dir="+join(tmp,"chrome"),"about:blank"],{stdio:"ignore"});
   const port=await wait(async()=> (await readFile(join(tmp,"chrome","DevToolsActivePort"),"utf8")).split("\n")[0]);

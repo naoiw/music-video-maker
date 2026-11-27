@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 const root = new URL("../dist-web/",import.meta.url);
 const manifest = JSON.parse(await readFile(new URL("core-manifest.json",root),"utf8"));
 if (manifest.version !== "0.12.10" || !/^[a-f0-9]{64}$/.test(manifest.coreJsSha256) || !/^[a-f0-9]{64}$/.test(manifest.coreWasmSha256))
@@ -7,7 +8,7 @@ if (manifest.version !== "0.12.10" || !/^[a-f0-9]{64}$/.test(manifest.coreJsSha2
 async function walk(path) {
   for (const item of await readdir(path,{withFileTypes:true})) {
     const entry = join(path,item.name);
-    if (item.isDirectory()) await walk(entry);
+    if (item.isDirectory()) await walk(fileURLToPath(root));
     else {
       if (!item.isFile() || /\.wasm$/i.test(item.name) || /ffmpeg-core\.(?:js|wasm)$/i.test(item.name) || (await stat(entry)).size > 2*1024*1024)
         throw new Error("Unexpected published asset: " + entry);

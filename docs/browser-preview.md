@@ -8,9 +8,10 @@ Windows 版の Tauri GUI は変更しない。まず独立したブラウザ検�
 
     pnpm install --frozen-lockfile
     pnpm web:prepare
-    pnpm web:dev
+    pnpm web:build
+    pnpm web:preview
 
-http://127.0.0.1:1421/music-video-maker/ を開く。静的ビルドは pnpm web:build、確認は pnpm web:preview（http://127.0.0.1:4173/music-video-maker/）。Node 26、固定 pnpm、tar が必要。Windowsのバッチは従来通り。
+http://127.0.0.1:4173/music-video-maker/ を開く。公開成果物と同じCSP・パスで確認する。開発用 pnpm web:dev（port 1421）はCSPによりスタイル注入等が制約されるため、動作確認には静的プレビューを使用する。Node 26、固定 pnpm、tar が必要。Windowsのバッチは従来通り。
 
 - 初回は処理エンジンの取得が必要（約32 MB）。素材は送信しない。
 - MP3 50 MiB、画像32 MiB・4000万画素、音声5分を試作上限とする。デスクトップ版の上限は変更しない。720pを初期値とし、1080pも試験可能。出力はCRF20/ultrafast、映像6 Mbpsの上限制御。

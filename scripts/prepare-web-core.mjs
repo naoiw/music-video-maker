@@ -6,6 +6,8 @@ import { join } from "node:path";
 
 const lock = JSON.parse(await readFile(new URL("../web/core-lock.json",import.meta.url),"utf8"));
 const publish = process.argv.includes("--publish");
+const manifestPath = new URL("../web/public/core-manifest.json",import.meta.url);
+await rm(manifestPath,{force:true});
 if (lock.version !== "0.12.10") throw new Error("Unexpected core version");
 if (publish && (!lock.approved || !lock.review || !lock.registryIntegrity || !lock.coreJsSha256 || !lock.coreWasmSha256))
   throw new Error("Publication blocked: record and review core hashes and license/security conditions in web/core-lock.json.");
@@ -41,7 +43,7 @@ try {
     manifest[key] = sha;
   }
   await mkdir(new URL("../web/public/",import.meta.url),{recursive:true});
-  await writeFile(new URL("../web/public/core-manifest.json",import.meta.url),JSON.stringify(manifest,null,2)+"\n");
+  await writeFile(manifestPath,JSON.stringify(manifest,null,2)+"\n");
   console.log(JSON.stringify(manifest,null,2));
   console.log(publish ? "Reviewed core verified for publication." : "Test-only manifest generated; publication is not approved.");
 } finally {

@@ -54,6 +54,7 @@ function metadataDuration(file: File): Promise<number> {
     const url = URL.createObjectURL(file);
     const finish = (error?: Error) => {
       clearTimeout(timer);
+      el.onloadedmetadata = null; el.onerror = null;
       const duration = el.duration;
       el.removeAttribute("src"); el.load(); URL.revokeObjectURL(url);
       if (error) reject(error); else resolve(duration);
