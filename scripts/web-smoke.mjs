@@ -10,7 +10,9 @@ const cases = benchmark
   ? [{ext:"png",seconds:180,width:1920,height:1080,fit:"contain"},{ext:"jpg",seconds:295,width:1920,height:1080,fit:"contain"},{ext:"png",seconds:180,width:1920,height:1080,fit:"blurred"}]
   : [...["png","jpg","gif","variable.gif"].flatMap(ext=>["blurred","contain","cover"].map(fit=>({ext,seconds:1.5,width:1280,height:720,fit}))),{ext:"variable.gif",seconds:12,width:1920,height:1080,fit:"blurred"},
     {ext:"png",seconds:1.5,width:1080,height:1080,fit:"blurred",fps:24,crf:24},
-    {ext:"variable.gif",seconds:1.5,width:1080,height:1920,fit:"blurred",fps:60,crf:16}];
+    {ext:"variable.gif",seconds:1.5,width:1080,height:1920,fit:"blurred",fps:60,crf:16},
+    {ext:"png",seconds:1.5,width:1280,height:720,fit:"contain",filters:"gain"},
+    {ext:"png",seconds:6,width:1280,height:720,fit:"contain",filters:"all"}];
 const results = [];
 const tmp = await mkdtemp(join(tmpdir(),"mvm-web-smoke-"));
 const base = "http://127.0.0.1:4173/music-video-maker/";
@@ -101,7 +103,15 @@ try {
     if((await stat(path)).size!==size)throw Error("Output size mismatch");
     return size;
   }
-  for(const {ext,seconds,width,height,fit,fps=30,crf=20} of cases){
+  let originalRms;
+  function audioRms(path,start,length){
+    const samples=run("ffmpeg",["-v","error","-ss",String(start),"-i",path,"-t",String(length),"-map","0:a:0","-f","f32le","-c:a","pcm_f32le","-"]);
+    if(!samples.length||samples.length%4)throw Error("Invalid decoded PCM");
+    let sum=0;
+    for(let i=0;i<samples.length;i+=4){const x=samples.readFloatLE(i);sum+=x*x;}
+    return Math.sqrt(sum/(samples.length/4));
+  }
+  for(const {ext,seconds,width,height,fit,fps=30,crf=20,filters="none"} of cases){
     await call("DOM.setFileInputFiles",{nodeId:audio,files:[join(tmp,"audio-"+seconds+".mp3")]});
     await call("DOM.setFileInputFiles",{nodeId:visual,files:[join(tmp,"image."+ext)]});
     for(const [selector,value] of [["#resolution",width+"x"+height],["#fit",fit],["#fps",String(fps)],["#quality",String(crf)]]){
@@ -112,6 +122,14 @@ try {
     if(!previewOk)throw Error("Preview fit mismatch: "+fit);
     const previewRatio=await evaluate("(()=>{const p=document.getElementById('visual-preview').getBoundingClientRect();return p.width/p.height;})()");
     if(Math.abs(previewRatio-width/height)>0.02)throw Error("Preview aspect ratio mismatch: "+previewRatio+" expected "+width/height);
+    await evaluate("document.getElementById('filters-reset').click()");
+    if(filters!=="none"){
+      const ids=filters==="gain"?["gain-enabled"]:["noise-enabled","highpass-enabled","lowpass-enabled","eq-enabled","gain-enabled","loudness-enabled"];
+      for(const id of ids)await evaluate("document.getElementById("+JSON.stringify(id)+").click()");
+      await evaluate("document.getElementById('volume-gain').value='-6';document.getElementById('volume-gain').dispatchEvent(new Event('input'))");
+      if(filters==="all")await evaluate("document.getElementById('eq-gain').value='3';document.getElementById('eq-gain').dispatchEvent(new Event('input'))");
+      if(!await evaluate("document.getElementById('limiter-enabled').checked"))throw Error("Automatic limiter did not enable");
+    }
     await wait(()=>evaluate("!document.querySelector('#encode').disabled"));
     if(benchmark && seconds===180 && fit==="contain"){
       await evaluate("document.querySelector('#encode').click()");
@@ -132,7 +150,7 @@ try {
     const wallSeconds=(performance.now()-started)/1000;
     const status=await evaluate("document.querySelector('#status').textContent");
     if(state!=="done")throw Error(ext+": "+status+" "+await evaluate("document.querySelector('#log').textContent"));
-    const path=join(tmp,ext+"-"+fit+"-"+width+"x"+height+"-"+fps+"-"+crf+"-"+seconds+".mp4"),size=await saveOutput(path);
+    const path=join(tmp,ext+"-"+fit+"-"+width+"x"+height+"-"+fps+"-"+crf+"-"+seconds+"-"+filters+".mp4"),size=await saveOutput(path);
     const info=JSON.parse(run("ffprobe",["-v","error","-show_streams","-show_format","-of","json",path]).toString());
     const v=info.streams.find(s=>s.codec_type==="video"),a=info.streams.find(s=>s.codec_type==="audio");
     const tolerance=benchmark?0.5:0.4;
@@ -188,6 +206,23 @@ try {
         }
       }
       }
+    }
+    if(!benchmark && ext==="png" && fit==="contain" && seconds===1.5){
+      const rms=audioRms(path,0.2,1);
+      if(filters==="none")originalRms=rms;
+      if(filters==="gain"){
+        const ratio=rms/originalRms;
+        if(!Number.isFinite(ratio)||Math.abs(20*Math.log10(ratio)+6)>0.75)throw Error("Gain RMS mismatch: "+ratio);
+        console.log("Gain filter verified: "+(20*Math.log10(ratio)).toFixed(2)+" dB");
+      }
+    }
+    if(filters==="all"){
+      const expectedGraph="afftdn=nr=6:nf=-50,highpass=f=80,lowpass=f=12000,equalizer=f=1000:t=q:w=1:g=3,volume=-6dB,loudnorm=I=-14:LRA=11:TP=-1.5:linear=false,aresample=44100,alimiter=limit=0.8912509381337456:attack=5:release=50:level=false:latency=true";
+      const reference=join(tmp,"reference.wav");
+      run("ffmpeg",["-y","-v","error","-i",join(tmp,"audio-6.mp3"),"-af",expectedGraph,"-c:a","pcm_f32le",reference]);
+      const ratio=audioRms(path,1,4)/audioRms(reference,1,4);
+      if(!Number.isFinite(ratio)||Math.abs(20*Math.log10(ratio))>1.5||Math.abs(Number(v.duration)-Number(a.duration))>0.2)throw Error("Full filter chain mismatch: "+ratio);
+      console.log("All seven audio filters verified against native reference: "+(20*Math.log10(ratio)).toFixed(2)+" dB");
     }
     console.log(ext+"/"+fit+"/"+width+"x"+height+"/"+fps+"fps/CRF"+crf+": "+status+"; FFprobe passed."+(benchmark?"":" Frame samples passed."));
     const encodeSeconds=Number(status.match(/エンコード ([\d.]+) 秒/)?.[1]);

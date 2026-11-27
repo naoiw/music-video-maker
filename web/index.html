@@ -33,6 +33,65 @@
         <div class="actions"><button id="settings-reset" type="button">出力設定を初期化</button></div>
         <p class="muted">最大5分、MP3 50 MiB、画像32 MiB・4000万画素。高解像度・60 fpsでは処理時間とメモリ使用量が増えます。</p>
       </section>
+      <section class="panel" aria-labelledby="filter-title">
+        <h2 id="filter-title">音声フィルタ</h2>
+        <fieldset id="web-filter-controls">
+        <fieldset id="noise-filter" disabled class="filters">
+          <label><input type="checkbox" id="noise-enabled" /> ノイズ除去（FFT）</label>
+          <fieldset id="noise-parameters" disabled class="filter-parameters">
+            <label for="noise-reduction">低減量 <output id="noise-reduction-value" for="noise-reduction">6 dB</output></label>
+            <input id="noise-reduction" type="range" min="1" max="30" step="1" value="6" />
+            <label for="noise-floor">ノイズフロア <output id="noise-floor-value" for="noise-floor">−50 dB</output></label>
+            <input id="noise-floor" type="range" min="-80" max="-20" step="1" value="-50" />
+            <button type="button" id="noise-reset">初期値に戻す</button>
+          </fieldset>
+          <p class="muted">強い設定では高音や残響なども失われる場合があります。</p>
+          <p id="noise-status" class="muted" role="status">ノイズ除去は無効です。</p>
+        </fieldset>
+        <fieldset disabled id="frequency-filters" class="filters filter-pending">
+          <h3>周波数調整</h3>
+          <label><input type="checkbox" id="highpass-enabled" /> ハイパス（低域カット）</label>
+          <fieldset disabled id="highpass-parameters" class="frequency-parameters fields">
+            <label>カットオフ (Hz)<input id="highpass-hz" type="number" min="20" max="20000" step="1" value="80" /></label>
+          </fieldset>
+          <label><input type="checkbox" id="lowpass-enabled" /> ローパス（高域カット）</label>
+          <fieldset disabled id="lowpass-parameters" class="frequency-parameters fields">
+            <label>カットオフ (Hz)<input id="lowpass-hz" type="number" min="20" max="20000" step="1" value="12000" /></label>
+          </fieldset>
+          <label><input type="checkbox" id="eq-enabled" /> パラメトリックEQ</label>
+          <fieldset disabled id="eq-parameters" class="frequency-parameters fields">
+            <label>中心周波数 (Hz)<input id="eq-hz" type="number" min="20" max="20000" step="1" value="1000" /></label>
+            <label>Q値<input id="eq-q" type="number" min="0.1" max="10" step="0.1" value="1" /></label>
+            <label>ゲイン (dB)<input id="eq-gain" type="number" min="-24" max="24" step="0.5" value="0" /></label>
+          </fieldset>
+          <button type="button" id="frequency-reset">初期値に戻す</button>
+          <p id="frequency-status" class="muted" role="status">周波数フィルタは無効です。</p>
+        </fieldset>
+        <fieldset disabled id="volume-filters" class="filters filter-pending">
+          <h3>音量調整</h3>
+          <label><input type="checkbox" id="gain-enabled" /> ゲイン調整</label>
+          <fieldset disabled id="gain-parameters" class="filter-parameters">
+            <label for="volume-gain">ゲイン <output id="volume-gain-value" for="volume-gain">0 dB</output></label>
+            <input id="volume-gain" type="range" min="-24" max="24" step="0.5" value="0" />
+          </fieldset>
+          <label><input type="checkbox" id="loudness-enabled" /> ラウドネス正規化</label>
+          <fieldset disabled id="loudness-parameters" class="frequency-parameters fields">
+            <label>目標音量 (LUFS)<input id="loudness-target" type="number" min="-24" max="-10" step="0.5" value="-14" /></label>
+            <label>True Peak 上限 (dBTP)<input id="loudness-peak" type="number" min="-9" max="-1" step="0.5" value="-1.5" /></label>
+          </fieldset>
+          <label><input type="checkbox" id="limiter-enabled" /> ピークリミッター</label>
+          <fieldset disabled id="limiter-parameters" class="frequency-parameters fields">
+            <label>サンプルピーク上限 (dBFS)<input id="limiter-ceiling" type="number" min="-12" max="-0.5" step="0.5" value="-1" /></label>
+          </fieldset>
+          <button type="button" id="volume-reset">初期値に戻す</button>
+          <p class="muted">音量を上げるとクリッピングが生じる場合があります。リミッターは加工の最後に適用します。</p>
+          <p id="volume-status" class="muted" role="status">音量フィルタは無効です。</p>
+        </fieldset>
+        <div class="actions"><button type="button" id="filters-reset">フィルタを初期化</button></div>
+        </fieldset>
+        <p id="filter-status" class="muted" role="status">音声フィルタ: なし</p>
+        <p class="muted">有効なフィルタはMP4出力に反映します。加工音の試聴は未実装です。周波数の上限は生成時に元MP3のサンプルレートで検証します。</p>
+      </section>
     </div>
     <div class="column">
       <section class="panel" aria-labelledby="preview-title">
@@ -46,6 +105,7 @@
       <section class="panel column" aria-labelledby="export-title">
         <h2 id="export-title">動画出力</h2>
         <p class="muted">生成した動画はMP4としてダウンロードできます。GIFは全配置で音声終了までループします。</p>
+        <p id="export-filter-summary" class="muted">音声フィルタ: なし</p>
         <progress id="progress" max="100" value="0" aria-label="生成進捗"></progress>
         <p id="status" role="status" aria-live="polite" data-state="idle">素材を選択してください。</p>
         <div class="actions"><button id="cancel" type="button" disabled>中断</button><button id="encode" type="button" class="primary" disabled>MP4を生成</button></div>
@@ -55,7 +115,7 @@
       </section>
     </div>
   </main>
-  <footer class="footer muted"><a href="https://github.com/naoiw/music-video-maker">GitHub</a> · <a href="https://github.com/ffmpegwasm/ffmpeg.wasm">FFmpeg.wasm</a> · <a href="https://ffmpeg.org/legal.html">FFmpeg licensing</a><p>技術検証版。Windows版の音声フィルタ・プリセットは未実装。</p></footer>
+  <footer class="footer muted"><a href="https://github.com/naoiw/music-video-maker">GitHub</a> · <a href="https://github.com/ffmpegwasm/ffmpeg.wasm">FFmpeg.wasm</a> · <a href="https://ffmpeg.org/legal.html">FFmpeg licensing</a><p>技術検証版。加工音の試聴・プリセットは未実装。</p></footer>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

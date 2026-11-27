@@ -1,6 +1,8 @@
 import "./styles.css";
 import workerSource from "./encoder-worker.js?raw";
 import { prepareLoopingGif } from "./gif-loop";
+import { activeFilterNames, compileWebAudioFilters } from "./audio-filter-plan";
+import { initializeWebAudioFilters } from "./audio-filter-panel";
 import { settingsFields } from "../../src/services/settings-schema";
 import { assertInputs, encodeArgs, imageKind, LIMITS, browserOutputDefaults, browserResolutions, type Resolution, type Fit } from "./encode-plan";
 
@@ -33,6 +35,7 @@ let worker: Worker | null = null;
 let imageURL = "";
 let outputURL = "";
 let lines: string[] = [];
+const filters = initializeWebAudioFilters(clearOutput);
 
 function setStatus(message: string, state = "busy") {
   status.textContent = message;
@@ -42,6 +45,7 @@ function refresh() {
   encode.disabled = busy || !audio.files?.length || !visual.files?.length;
   cancel.disabled = !busy;
   for (const el of [audio,visual,resolution,fit,fps,quality,settingsReset]) el.disabled = busy;
+  filters.setBusy(busy);
 }
 function clearOutput() {
   output.pause(); output.removeAttribute("src"); output.load(); output.hidden = true;
@@ -125,6 +129,8 @@ encode.addEventListener("click", async () => {
   try {
     if (!/\.mp3$/i.test(a.name) || a.size <= 0 || a.size > LIMITS.audioBytes || v.size <= 0 || v.size > LIMITS.imageBytes)
       throw new Error("MP3は50 MiB、画像は32 MiB以下にしてください。");
+    const filterSettings = filters.values();
+    const useFilters = activeFilterNames(filterSettings).length > 0;
     const kind = imageKind(new Uint8Array(await v.slice(0,8).arrayBuffer()));
     const duration = await metadataDuration(a);
     const bitmap = await createImageBitmap(v);
@@ -144,6 +150,13 @@ encode.addEventListener("click", async () => {
     worker.onerror = (event) => { if (job === sequence) fail(event.message || "Workerの実行に失敗しました。"); };
     worker.onmessage = ({data}) => {
       if (job !== sequence) return;
+      if (data.type === "probe") {
+        try {
+          const graph = compileWebAudioFilters(filterSettings, Number(data.sampleRate));
+          if (!graph || !worker) throw new Error("音声フィルタの設定を取得できません。");
+          worker.postMessage({type:"filterGraph",graph});
+        } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+      }
       if (data.type === "status") setStatus(data.message);
       if (data.type === "progress") progress.value = data.value;
       if (data.type === "log") { lines.push(data.message); if (lines.length > 30) lines.shift(); log.textContent = lines.join("\n"); }
@@ -157,7 +170,7 @@ encode.addEventListener("click", async () => {
         setStatus("生成完了（エンコード " + Number(data.encodeSeconds).toFixed(1) + " 秒）","done");
       }
     };
-    worker.postMessage({manifest,audio:audioBytes,visual:visualBytes,kind,args,duration},[audioBytes,visualBytes]);
+    worker.postMessage({manifest,audio:audioBytes,visual:visualBytes,kind,args,duration,useFilters},[audioBytes,visualBytes]);
   } catch (error) {
     if (job === sequence) fail(error instanceof Error ? error.message : String(error));
   }
