@@ -4,7 +4,7 @@
 
 | 項目 | 確認内容 | 状態 |
 | --- | --- | --- |
-| CI | 固定 pnpm / Cargo lockfile、フロントエンド/Rust、FFmpeg 全結合テスト、build.bat で exe 生成 | pnpm 統一後の CI 未確認 |
+| CI | 固定 pnpm / Cargo lockfile、フロントエンド/Rust、FFmpeg 全結合テスト、build.bat で exe 生成 | main CI 成功 |
 | 初回環境構築 | Windows 10/11 x64 で setup.bat、pnpm 導入、PATH、再起動、既存環境での再実行 | 未確認 |
 | ビルド | build.bat で固定 lockfile を使用して exe 生成、失敗時の案内、パスに空白・日本語 | 未確認 |
 | GUI | exe 起動、MP3＋PNG/JPEG/GIF、同時ドロップ、プレビュー | 未確認 |
@@ -13,6 +13,6 @@
 | 設定 | 再起動後復元、プリセット、初期化 | 未確認 |
 | 異常系 | 破損素材、同名、権限/容量不足、FFmpeg欠損、中断・再試行 | 未確認 |
 | YouTube | 権利を確認した動画の限定公開等で処理・再生 | 未確認 |
-| main | ユーザー確認後に統合、必要なら v0.1.0 ソース版タグ | 未実施 |
+| main | ユーザー確認後に統合、必要なら v0.1.0 ソース版タグ | PR #75 マージ済み、ユーザー動作確認完了 |
 
-[PR #72 のCI](https://github.com/naoiw/music-video-maker/actions/runs/46025777620) は成功したが、pnpm 統一後の CI と実機セットアップ・ビルドは別途確認する。実楽曲や個人情報はコミットしない。確認したコミット、Windows、Node/Rust/FFmpeg/WebView2 のバージョン、操作結果・エラーコードを記録する。既知の制限は [ユーザーガイド](user-guide.md) を参照。未確認を合格とせず、main へのマージはユーザー承認後に行う。
+[main の CI](https://github.com/naoiw/music-video-maker/actions/runs/46033414483) は成功。PR #75 の main 統合後、ユーザーから動作確認完了の報告を受け #27 をクローズした。個別のクリーン環境導入・全素材・異常系・YouTube投稿の結果は未記録のため、個別項目を合格に変更していない。実楽曲や個人情報はコミットしない。確認したコミット、Windows、Node/Rust/FFmpeg/WebView2 のバージョン、操作結果・エラーコードを記録する。既知の制限は [ユーザーガイド](user-guide.md) を参照。未確認を合格とせず、main へのマージはユーザー承認後に行う。

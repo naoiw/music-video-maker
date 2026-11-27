@@ -5,7 +5,7 @@
 - フロントエンド: TypeScript / HTML / CSS / Vite（フレームワークなしを初期選択）。
 - デスクトップ: Tauri 2 / Rust。OS のファイル選択、処理実行、設定保存を担当。
 - エンコード: FFmpeg / FFprobe のネイティブ実行。既存のコーデック・フィルタを利用する。
-- ブラウザ版: 将来 FFmpeg.wasm などの実行バックエンドを検討する。Tauri の実行ファイルを Pages に置くだけでは動作しない。
+- ブラウザ版: 将来 FFmpeg.wasm などの実行バックエンドを検討する。Tauri の実行ファイルを Pages に置くだけでは動作しない。[ブラウザ版の技術検証](browser-feasibility.md) を参照。公開は別途判断し、FFmpeg WASM バイナリの配布を前提にしない。
 
 ## 責務
 
