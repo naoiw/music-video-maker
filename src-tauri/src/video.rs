@@ -232,7 +232,9 @@ mod tests {
         let args = encoder_args("music file.mp3", "cover %d.png", "png", "temp.mp4");
         assert!(args.windows(2).any(|pair| pair == ["-i", "cover %d.png"]));
         assert!(args.windows(2).any(|pair| pair == ["-i", "music file.mp3"]));
-        assert!(args.windows(2).any(|pair| pair == ["-pattern_type", "none"]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["-pattern_type", "none"]));
         assert!(args.windows(2).any(|pair| pair == ["-map", "1:a:0"]));
         assert!(args.contains(&"-shortest"));
         assert_eq!(args.last(), Some(&"temp.mp4"));
@@ -279,7 +281,9 @@ mod tests {
         for extension in ["png", "jpg"] {
             let cover = dir.path().join(format!("cover %d.{extension}"));
             let output = dir.path().join(format!("result {extension}.mp4"));
-            image::DynamicImage::new_rgb8(513, 777).save(&cover).unwrap();
+            image::DynamicImage::new_rgb8(513, 777)
+                .save(&cover)
+                .unwrap();
             let info = encode_static_video(
                 audio.to_str().unwrap(),
                 cover.to_str().unwrap(),
