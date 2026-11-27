@@ -1,6 +1,6 @@
 import { getSelectedAudio } from "./audio-source";
 import { getSelectedVisual } from "./visual-source";
-import { encodeVideo, selectOutput } from "../services/video";
+import { encodeVideo, selectOutput, type OutputSettings } from "../services/video";
 
 export function initializeExport(available: boolean): () => void {
   const audioButton = document.querySelector<HTMLButtonElement>("#select-audio");
@@ -10,7 +10,14 @@ export function initializeExport(available: boolean): () => void {
   const outputName = document.querySelector<HTMLElement>("#output-path");
   const status = document.querySelector<HTMLElement>("#encode-status");
   const progress = document.querySelector<HTMLProgressElement>("#encode-progress");
-  if (!audioButton || !visualButton || !outputButton || !startButton ||
+  const fieldset = document.querySelector<HTMLFieldSetElement>("#output-settings");
+  const resolution = document.querySelector<HTMLSelectElement>("#resolution");
+  const fps = document.querySelector<HTMLSelectElement>("#fps");
+  const fit = document.querySelector<HTMLSelectElement>("#fit");
+  const quality = document.querySelector<HTMLSelectElement>("#quality");
+  const preview = document.querySelector<HTMLElement>("#visual-preview");
+  if (!fieldset || !resolution || !fps || !fit || !quality || !preview ||
+      !audioButton || !visualButton || !outputButton || !startButton ||
       !outputName || !status || !progress) {
     throw new Error("Missing export elements");
   }
@@ -19,19 +26,40 @@ export function initializeExport(available: boolean): () => void {
   let encoding = false;
   let choosingOutput = false;
 
+  function readSettings(): OutputSettings | null {
+    const size = resolution!.value;
+    const frames = Number(fps!.value);
+    const crf = Number(quality!.value);
+    const mode = fit!.value;
+    if (!["1920x1080", "1080x1080", "1080x1920"].includes(size) ||
+        ![24, 30, 60].includes(frames) || ![16, 20, 24].includes(crf) ||
+        (mode !== "contain" && mode !== "cover")) return null;
+    const [width, height] = size.split("x").map(Number);
+    return { width, height, fps: frames, crf, fit: mode };
+  }
+
   function refresh(): void {
+    const settings = readSettings();
+    fieldset!.disabled = !available || encoding;
+    if (settings) {
+      preview!.dataset.resolution = resolution!.value;
+      preview!.dataset.fit = settings.fit;
+    }
     const audio = getSelectedAudio();
     const visual = getSelectedVisual();
     outputButton!.disabled = !available || encoding || choosingOutput;
     startButton!.disabled = !available || encoding || choosingOutput ||
       audioButton!.disabled || visualButton!.disabled ||
-      !audio || !visual || !outputPath;
+      !audio || !visual || !outputPath || !settings;
     if (encoding || choosingOutput) return;
     progress!.value = 0;
     status!.textContent = !available ? "FFmpegとFFprobeが必要です。" :
       !audio || !visual || !outputPath ? "音声・画像と保存先を選択してください。" :
-      "1920 × 1080 / 30 fps で生成できます。";
+      !settings ? "出力設定が無効です。" :
+      `${settings.width} × ${settings.height} / ${settings.fps} fps / CRF ${settings.crf} で生成できます。`;
   }
+
+  fieldset.addEventListener("change", refresh);
 
   outputButton.addEventListener("click", async () => {
     choosingOutput = true;
@@ -56,7 +84,8 @@ export function initializeExport(available: boolean): () => void {
   startButton.addEventListener("click", async () => {
     const audio = getSelectedAudio();
     const visual = getSelectedVisual();
-    if (startButton.disabled || !audio || !visual || !outputPath) return;
+    const settings = readSettings();
+    if (startButton.disabled || !audio || !visual || !outputPath || !settings) return;
     encoding = true;
     audioButton.disabled = true;
     visualButton.disabled = true;
@@ -66,7 +95,7 @@ export function initializeExport(available: boolean): () => void {
     let resultMessage: string;
     let succeeded = false;
     try {
-      const info = await encodeVideo(audio.path, visual.path, outputPath);
+      const info = await encodeVideo(audio.path, visual.path, outputPath, settings);
       succeeded = true;
       resultMessage = `生成完了 · ${info.durationSeconds.toFixed(1)} 秒 · ${(info.sizeBytes / 1024 / 1024).toFixed(2)} MiB`;
       // Require a new destination for the next export; never overwrite.

@@ -1,6 +1,14 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 
+export interface OutputSettings {
+  width: number;
+  height: number;
+  fps: number;
+  crf: number;
+  fit: "contain" | "cover";
+}
+
 export interface VideoInfo {
   durationSeconds: number;
   sizeBytes: number;
@@ -19,6 +27,7 @@ export async function encodeVideo(
   audioPath: string,
   visualPath: string,
   outputPath: string,
+  settings: OutputSettings,
 ): Promise<VideoInfo> {
-  return invoke<VideoInfo>("encode_video", { audioPath, visualPath, outputPath });
+  return invoke<VideoInfo>("encode_video", { audioPath, visualPath, outputPath, settings });
 }

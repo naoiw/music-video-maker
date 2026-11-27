@@ -5,10 +5,63 @@ use std::sync::Mutex;
 
 static ENCODE_LOCK: Mutex<()> = Mutex::new(());
 
-const VIDEO_FILTER: &str = concat!(
-    "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,",
-    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"
-);
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ImageFit {
+    Contain,
+    Cover,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub(crate) struct OutputSettings {
+    width: u32,
+    height: u32,
+    fps: u32,
+    crf: u32,
+    fit: ImageFit,
+}
+
+impl Default for OutputSettings {
+    fn default() -> Self {
+        Self {
+            width: 1920,
+            height: 1080,
+            fps: 30,
+            crf: 20,
+            fit: ImageFit::Contain,
+        }
+    }
+}
+
+impl OutputSettings {
+    fn validate(self) -> Result<(), String> {
+        let size = (self.width, self.height);
+        if ![(1920, 1080), (1080, 1080), (1080, 1920)].contains(&size) {
+            return Err("非対応の出力解像度です。".into());
+        }
+        if !matches!(self.fps, 24 | 30 | 60) || !matches!(self.crf, 16 | 20 | 24) {
+            return Err("非対応の FPS または画質設定です。".into());
+        }
+        Ok(())
+    }
+
+    fn filter(self) -> String {
+        let (width, height) = (self.width, self.height);
+        let (mode, placement) = match self.fit {
+            ImageFit::Contain => (
+                "decrease",
+                format!("pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black"),
+            ),
+            ImageFit::Cover => (
+                "increase",
+                format!("crop={width}:{height}:(iw-ow)/2:(ih-oh)/2"),
+            ),
+        };
+        format!(
+            "scale={width}:{height}:force_original_aspect_ratio={mode}:force_divisible_by=2:out_range=tv,{placement},setsar=1"
+        )
+    }
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,12 +99,16 @@ enum VisualKind {
     Gif,
 }
 
-fn encoder_args<'a>(
-    audio_path: &'a str,
-    visual_path: &'a str,
+fn encoder_args(
+    audio_path: &str,
+    visual_path: &str,
     source: VisualKind,
-    temporary_path: &'a str,
-) -> Vec<&'a str> {
+    temporary_path: &str,
+    settings: OutputSettings,
+) -> Vec<String> {
+    let fps = settings.fps.to_string();
+    let crf = settings.crf.to_string();
+    let filter = settings.filter();
     let mut args = vec![
         "-hide_banner",
         "-loglevel",
@@ -77,7 +134,7 @@ fn encoder_args<'a>(
                 "-loop",
                 "1",
                 "-framerate",
-                "30",
+                &fps,
                 "-c:v",
                 codec,
             ]);
@@ -99,19 +156,19 @@ fn encoder_args<'a>(
         "-map_metadata",
         "-1",
         "-vf",
-        VIDEO_FILTER,
+        &filter,
         "-c:v",
         "libx264",
         "-preset",
         "medium",
         "-crf",
-        "20",
+        &crf,
         "-pix_fmt",
         "yuv420p",
         "-color_range",
         "tv",
         "-r",
-        "30",
+        &fps,
         "-c:a",
         "aac",
         "-b:a",
@@ -123,7 +180,7 @@ fn encoder_args<'a>(
         "mp4",
         temporary_path,
     ]);
-    args
+    args.into_iter().map(str::to_owned).collect()
 }
 
 fn positive_duration(value: &str) -> Result<f64, String> {
@@ -134,7 +191,7 @@ fn positive_duration(value: &str) -> Result<f64, String> {
         .ok_or_else(|| "生成動画の再生時間を確認できません。".to_owned())
 }
 
-fn validate_output(bytes: &[u8]) -> Result<f64, String> {
+fn validate_output(bytes: &[u8], settings: OutputSettings) -> Result<f64, String> {
     let result: ProbeResult =
         serde_json::from_slice(bytes).map_err(|error| format!("FFprobe JSON: {error}"))?;
     let video = result
@@ -147,13 +204,14 @@ fn validate_output(bytes: &[u8]) -> Result<f64, String> {
         .iter()
         .find(|stream| stream.codec_type == "audio")
         .ok_or_else(|| "生成動画に音声がありません。".to_owned())?;
+    let expected_fps = format!("{}/1", settings.fps);
     if result.streams.len() != 2
         || video.codec_name != "h264"
         || audio.codec_name != "aac"
-        || video.width != Some(1920)
-        || video.height != Some(1080)
+        || video.width != Some(settings.width)
+        || video.height != Some(settings.height)
         || video.pix_fmt.as_deref() != Some("yuv420p")
-        || video.r_frame_rate.as_deref() != Some("30/1")
+        || video.r_frame_rate.as_deref() != Some(expected_fps.as_str())
     {
         return Err("生成動画の形式が出力設定と一致しません。".into());
     }
@@ -188,7 +246,9 @@ pub(crate) fn encode_video(
     audio_path: &str,
     visual_path: &str,
     output_path: &str,
+    settings: OutputSettings,
 ) -> Result<VideoInfo, String> {
+    settings.validate()?;
     let _guard = ENCODE_LOCK
         .try_lock()
         .map_err(|_| "別の動画生成を実行中です。".to_owned())?;
@@ -217,7 +277,9 @@ pub(crate) fn encode_video(
         .to_str()
         .ok_or_else(|| "一時ファイルのパスを処理できません。".to_owned())?;
 
-    Tool::Ffmpeg.run(&encoder_args(audio_path, visual_path, source, temp_path))?;
+    let args = encoder_args(audio_path, visual_path, source, temp_path, settings);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    Tool::Ffmpeg.run(&args)?;
 
     let probe = Tool::Ffprobe.run(&[
         "-v",
@@ -231,7 +293,7 @@ pub(crate) fn encode_video(
         "-i",
         temp_path,
     ])?;
-    let duration_seconds = validate_output(&probe.stdout)?;
+    let duration_seconds = validate_output(&probe.stdout, settings)?;
     let size_bytes = std::fs::metadata(temp_path)
         .map_err(|error| format!("出力ファイルを確認できません: {error}"))?
         .len();
@@ -256,6 +318,7 @@ mod tests {
             "cover %d.png",
             VisualKind::Png,
             "temp.mp4",
+            OutputSettings::default(),
         );
         assert!(args.windows(2).any(|pair| pair == ["-i", "cover %d.png"]));
         assert!(args.windows(2).any(|pair| pair == ["-i", "music file.mp3"]));
@@ -263,18 +326,24 @@ mod tests {
             .windows(2)
             .any(|pair| pair == ["-pattern_type", "none"]));
         assert!(args.windows(2).any(|pair| pair == ["-map", "1:a:0"]));
-        assert!(args.contains(&"-shortest"));
-        assert_eq!(args.last(), Some(&"temp.mp4"));
+        assert!(args.iter().any(|arg| arg == "-shortest"));
+        assert_eq!(args.last().map(String::as_str), Some("temp.mp4"));
     }
 
     #[test]
     fn gif_arguments_ignore_embedded_loop_count() {
-        let args = encoder_args("audio.mp3", "cover.gif", VisualKind::Gif, "temp.mp4");
+        let args = encoder_args(
+            "audio.mp3",
+            "cover.gif",
+            VisualKind::Gif,
+            "temp.mp4",
+            OutputSettings::default(),
+        );
         assert!(args.windows(2).any(|pair| pair == ["-f", "gif"]));
         assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "1"]));
         assert!(args.windows(2).any(|pair| pair == ["-stream_loop", "-1"]));
-        assert!(!args.contains(&"-pattern_type"));
-        assert!(args.contains(&"-shortest"));
+        assert!(!args.iter().any(|arg| arg == "-pattern_type"));
+        assert!(args.iter().any(|arg| arg == "-shortest"));
     }
 
     #[test]
@@ -291,8 +360,12 @@ mod tests {
 
     #[test]
     fn rejects_unverified_output() {
-        assert!(validate_output(b"{}").is_err());
-        assert!(validate_output(br#"{"streams":[],"format":{"duration":"2"}}"#).is_err());
+        assert!(validate_output(b"{}", OutputSettings::default()).is_err());
+        assert!(validate_output(
+            br#"{"streams":[],"format":{"duration":"2"}}"#,
+            OutputSettings::default(),
+        )
+        .is_err());
         assert!(positive_duration("NaN").is_err());
         assert!(positive_duration("0").is_err());
     }
@@ -325,6 +398,7 @@ mod tests {
                 audio.to_str().unwrap(),
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
+                OutputSettings::default(),
             )
             .unwrap();
             assert!((info.duration_seconds - 2.3).abs() < 0.2);
@@ -334,6 +408,7 @@ mod tests {
                 audio.to_str().unwrap(),
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
+                OutputSettings::default(),
             )
             .is_err());
         }
@@ -410,6 +485,7 @@ mod tests {
                 audio.to_str().unwrap(),
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
+                OutputSettings::default(),
             )
             .unwrap();
             assert!((info.duration_seconds - 2.3).abs() < 0.2);
@@ -431,6 +507,91 @@ mod tests {
                     assert!(pixel[2] > 200 && pixel[0] < 50, "{name}: {timestamp}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn validates_settings_and_generates_fit_filters() {
+        let defaults = OutputSettings::default();
+        assert!(defaults.validate().is_ok());
+        assert!(defaults.filter().contains("pad=1920:1080"));
+        let cover = OutputSettings {
+            width: 1080,
+            height: 1920,
+            fps: 60,
+            crf: 16,
+            fit: ImageFit::Cover,
+        };
+        assert!(cover.validate().is_ok());
+        assert!(cover.filter().contains("crop=1080:1920"));
+        let args = encoder_args("a.mp3", "b.png", VisualKind::Png, "c.mp4", cover);
+        for expected in [["-framerate", "60"], ["-r", "60"], ["-crf", "16"]] {
+            assert!(args.windows(2).any(|pair| pair == expected));
+        }
+        let mut invalid = defaults;
+        invalid.width = 1;
+        assert!(invalid.validate().is_err());
+        invalid = defaults;
+        invalid.fps = 0;
+        assert!(invalid.validate().is_err());
+        invalid = defaults;
+        invalid.crf = 99;
+        assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with libmp3lame, libx264, AAC and FFprobe"]
+    fn encodes_custom_output_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("song.mp3");
+        let cover = dir.path().join("square.png");
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=1.2",
+                "-c:a",
+                "libmp3lame",
+                audio.to_str().unwrap(),
+            ])
+            .unwrap();
+        let image = image::DynamicImage::new_rgb8(640, 640);
+        image.save(&cover).unwrap();
+        for (name, settings) in [
+            (
+                "square",
+                OutputSettings {
+                    width: 1080,
+                    height: 1080,
+                    fps: 24,
+                    crf: 24,
+                    fit: ImageFit::Contain,
+                },
+            ),
+            (
+                "portrait",
+                OutputSettings {
+                    width: 1080,
+                    height: 1920,
+                    fps: 60,
+                    crf: 16,
+                    fit: ImageFit::Cover,
+                },
+            ),
+        ] {
+            let output = dir.path().join(format!("{name}.mp4"));
+            let info = encode_video(
+                audio.to_str().unwrap(),
+                cover.to_str().unwrap(),
+                output.to_str().unwrap(),
+                settings,
+            )
+            .unwrap();
+            assert!((info.duration_seconds - 1.2).abs() < 0.2);
+            assert!(info.size_bytes > 0);
         }
     }
 }

@@ -39,6 +39,10 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .filters label { display: flex; align-items: center; gap: 6px; }
 .preview { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; background: #10141d; color: #adb7c7; border-radius: 6px; text-align: center; padding: 12px; overflow: hidden; }
 .preview-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.preview[data-resolution="1080x1080"] { aspect-ratio: 1 / 1; }
+.preview[data-resolution="1080x1920"] { aspect-ratio: 9 / 16; width: min(100%, 300px); margin-inline: auto; }
+.preview[data-fit="cover"] .preview-image { object-fit: cover; }
+.preview:has(.preview-image) { background: #000; }
 .preview-controls, .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 progress { width: 100%; height: 8px; accent-color: var(--accent); }
 .footer { padding-block: 16px 24px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
