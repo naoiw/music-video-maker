@@ -6,6 +6,7 @@ import { cancelEncode, encodeVideo, getEncodeProgress, selectOutput, type Output
 export function initializeExport(available: boolean, refreshPreview: () => void): () => void {
   const audioButton = document.querySelector<HTMLButtonElement>("#select-audio");
   const visualButton = document.querySelector<HTMLButtonElement>("#select-visual");
+  const resetSettingsButton = document.querySelector<HTMLButtonElement>("#settings-reset");
   const outputButton = document.querySelector<HTMLButtonElement>("#select-output");
   const startButton = document.querySelector<HTMLButtonElement>("#start-encode");
   const cancelButton = document.querySelector<HTMLButtonElement>("#cancel-encode");
@@ -21,7 +22,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
   const filterPanel = document.querySelector<HTMLElement>("#filter-title")?.parentElement;
   const filterSummary = document.querySelector<HTMLElement>("#export-filter-summary");
   if (!filterPanel || !filterSummary || !fieldset || !resolution || !fps || !fit || !quality || !preview ||
-      !audioButton || !visualButton || !outputButton || !startButton ||
+      !audioButton || !visualButton || !resetSettingsButton || !outputButton || !startButton ||
       !outputName || !status || !progress || !cancelButton) {
     throw new Error("Missing export elements");
   }
@@ -54,6 +55,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
   function refresh(): void {
     const settings = readSettings();
     fieldset!.disabled = !available || encoding;
+    resetSettingsButton!.disabled = encoding;
     for (const section of filterPanel!.querySelectorAll<HTMLFieldSetElement>(":scope > fieldset")) {
       section.disabled = !available || encoding;
     }

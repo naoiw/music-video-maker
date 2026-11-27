@@ -1,0 +1,66 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { defaultSettings, parseSettings, serializeSettings, validateSettings, settingsIds } from "../src/services/settings-schema.ts";
+import { createSettingsWriter } from "../src/services/settings-writer.ts";
+
+test("defaults round-trip; disabled filter values and manual limiter state persist", () => {
+  const values = { ...defaultSettings(), resolution: "1080x1080", fps: "60", quality: "16",
+    fit: "cover", "lowpass-hz": 18000, "eq-q": 1.7, "gain-enabled": true,
+    "volume-gain": 2.5, "limiter-enabled": false };
+  assert.deepEqual(parseSettings(serializeSettings(values)), values);
+  assert.equal(defaultSettings()["lowpass-hz"], 12000);
+  assert.equal(defaultSettings()["gain-enabled"], false);
+  assert.equal(defaultSettings().fps, "30");
+  assert.equal(settingsIds.length, 22);
+  assert.ok(settingsIds.filter(id => id.endsWith("-enabled")).every(id => defaultSettings()[id] === false));
+});
+
+test("rejects corrupt, missing, unsupported, wrong type and out-of-range settings", () => {
+  for (const raw of ["{", "null", "[]", "{}", '{"version":2,"values":{}}',
+    '{"version":1,"values":{}}']) assert.equal(parseSettings(raw), null);
+  const values = defaultSettings();
+  for (const invalid of [{ fps: 30 }, { resolution: "1280x720" }, { "noise-enabled": "false" },
+    { "eq-q": 0.15 }, { "eq-hz": 20001 }, { "volume-gain": NaN }, { "loudness-peak": -0.5 },
+    { "noise-reduction": null }, { "limiter-ceiling": -1.25 }]) {
+    assert.equal(validateSettings({ ...values, ...invalid }), null);
+  }
+  const missing = { ...values };
+  delete missing["fit"];
+  assert.equal(validateSettings(missing), null);
+  assert.equal(parseSettings(JSON.stringify({ version: 2, values })), null);
+  assert.deepEqual(validateSettings({ ...values, sourcePath: "secret.mp3" }), values);
+});
+
+test("writes sequentially, coalesces edits and retains last valid snapshot", async () => {
+  const writes = [];
+  const states = [];
+  let release;
+  const writer = createSettingsWriter(async json => {
+    writes.push(parseSettings(json).fps);
+    if (writes.length === 1) await new Promise(resolve => { release = resolve; });
+  }, state => states.push(state), null);
+  const first = writer(defaultSettings());
+  await writer({ ...defaultSettings(), fps: "24" });
+  await writer({ ...defaultSettings(), fps: "60" });
+  await writer(null);
+  release();
+  await first;
+  assert.deepEqual(writes, ["30", "60"]);
+  assert.equal(states.at(-1), "invalid");
+  await writer({ ...defaultSettings(), fps: "60" });
+  assert.deepEqual(writes, ["30", "60"]);
+  assert.equal(states.at(-1), "saved");
+});
+
+test("write failure is reported and the next edit retries", async () => {
+  const states = [];
+  let attempts = 0;
+  const writer = createSettingsWriter(async () => {
+    if (++attempts === 1) throw new Error("write failed");
+  }, state => states.push(state), null);
+  await writer(defaultSettings());
+  assert.equal(states.at(-1), "error");
+  await writer(defaultSettings());
+  assert.equal(attempts, 2);
+  assert.equal(states.at(-1), "saved");
+});

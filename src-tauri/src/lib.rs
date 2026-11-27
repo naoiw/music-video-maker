@@ -3,10 +3,12 @@ mod audio_filters;
 mod audio_preview;
 mod encode_job;
 mod ffmpeg;
+mod settings;
 mod video;
 mod visual;
 
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Serialize)]
 struct RuntimeInfo {
@@ -128,6 +130,24 @@ fn cancel_encode(job_id: u32) -> bool {
     encode_job::cancel(job_id)
 }
 
+#[tauri::command]
+fn read_settings(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?;
+    settings::read(&dir)
+}
+
+#[tauri::command]
+fn write_settings(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?;
+    settings::write(&dir, &json)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -140,7 +160,9 @@ pub fn run() {
             load_visual,
             encode_video,
             encode_progress,
-            cancel_encode
+            cancel_encode,
+            read_settings,
+            write_settings
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Music Video Maker");
