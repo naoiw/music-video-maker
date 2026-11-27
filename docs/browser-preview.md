@@ -20,16 +20,24 @@ http://127.0.0.1:4173/music-video-maker/ を開く。公開成果物と同じCSP
 
 ## コアの取得と公開条件
 
-web:prepare はnpmレジストリの指定バージョンのtarballをSHA-512で検証し、tar -xOfで対象2ファイルだけ取得する。jsDelivrからの取得バイトと照合しSHA-256マニフェストを生成する。これは試験用照合であって事前に審査された固定ハッシュではない。公開前に確認したregistryIntegrity / coreJsSha256 / coreWasmSha256、ライセンス・安全性・実用性能に関する審査記録を web/core-lock.json に反映する。approved=false のままでは公開ビルドを拒否する。ブラウザはそのマニフェストと取得バイトを照合してから実行する。CSPは接続先を自サイト・jsDelivrに限定する。コア自体の再配布や再配布条件の免除を宣言しない。
+web:prepare はnpmレジストリの指定バージョンのtarballをSHA-512で検証し、tar -xOfで対象2ファイルだけ取得する。jsDelivrからの取得バイトと照合しSHA-256マニフェストを生成する。PR #77 のCIで取得・照合したregistryIntegrity / coreJsSha256 / coreWasmSha256は web/core-lock.json に固定済み。以降の取得はこの固定値とも照合する。ただしハッシュの一致はライセンス・安全性・実用性能の審査完了を意味しない。公開前に審査記録を同ファイルに反映する。approved=false のままでは公開ビルドを拒否する。ブラウザはそのマニフェストと取得バイトを照合してから実行する。CSPは接続先を自サイト・jsDelivrに限定する。コア自体の再配布や再配布条件の免除を宣言しない。
 
 ## CI・公開設定
 
 Browser preview and Pages workflow はPR/mainでビルド、単体テスト、実Chromeで合成素材PNG/JPEG/GIFを使った短尺生成とFFprobe検証を行う。公開成果物にcore JS/WASMが含まれないことを検査する。公開はレビュー後、mainでworkflow_dispatchのdeploy=trueを選択した場合のみ行う。リポジトリ Settings → Pages → Build and deployment → Source を GitHub Actions に設定する。既存のWindows用CIは維持。公開条件が未達の場合は設定してもデプロイされない。
 
+## 性能評価
+
+PR #77 の [ブラウザCI](https://github.com/naoiw/music-video-maker/actions/runs/46036941886) と [main のブラウザCI](https://github.com/naoiw/music-video-maker/actions/runs/46038560587) は成功。PRの1.5秒/720p試験ではPNG 1.0秒、JPEG 1.1秒、GIF 1.0秒で生成し、FFprobeで検証した（初期取得・初期化時間を除く）。
+
+長尺評価は `pnpm web:prepare`、`pnpm web:build` 後に `pnpm web:benchmark` で再現する（Chrome・ffmpeg・ffprobeがPATHに必要）。CIでも180秒のPNGと295秒のJPEGを1920×1080/30fpsで検証し、合成ステレオMP3とテストパターンのみ使用する。MP3のエンコーダー遅延により300秒上限をわずかに超えることを避けるため295秒にする。中断後の再試行、音声/映像/コンテナの尺、コーデック、寸法、fps、pixel formatを検証し、処理時間・全体時間・ファイルサイズ・Linux上のChromeプロセスRSS概算をActionsのSummaryに表示する。各長尺ケースは最大480秒で打ち切る（安全上の試験上限であり実用性の合格基準ではない）。合成素材での結果は実楽曲やユーザーPCの性能を保証しない。
+
 ## 残件
 
-- CI実行結果、PC Chrome/Edgeの3〜5分・1080p実測、メモリと出力尺、GIFループ、中断・再試行、ネットワーク非送信の実機確認。
+- 長尺ベンチマークCIの結果、PC Chrome/Edgeの実楽曲・1080p実測、長尺GIFループ、ネットワーク非送信の実機確認。
 - 第三者ライセンス・コーデック特許・安全性のレビュー、公開承認、実URL確認。
 - 既存GUIと機能の段階的統合。実用性や公開条件を満たせない場合は#29を中止する。
+
+公開審査の詳細は [ブラウザ公開条件](browser-publication-review.md) を参照。
 
 参考: https://github.com/ffmpegwasm/ffmpeg.wasm/blob/main/packages/ffmpeg/src/worker.ts 、https://ffmpegwasm.netlify.app/docs/getting-started/usage/ 、https://docs.github.com/ja/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site
