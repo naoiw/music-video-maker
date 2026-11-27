@@ -50,6 +50,7 @@ Rust / Tauri / TypeScript / Vite / pnpm / FFmpeg を使用しています。
 - [環境構築とビルド](docs/setup.md)
 - [FFmpeg / FFprobe](docs/ffmpeg.md)
 - [MVP総合検証](docs/mvp-validation.md)
+- [ブラウザ版の技術検証（Post-MVP）](docs/browser-feasibility.md)
 - [Issues](https://github.com/naoiw/music-video-maker/issues)
 
 ## License
