@@ -23,6 +23,7 @@ Rust / Tauri / TypeScript / FFmpeg を使用する方針です。
 - [システム構成](docs/architecture.md)
 - [音声フィルタ処理基盤](docs/audio-filters.md)
 - [開発フロー](docs/development.md)
+- [テスト・検証](docs/testing.md)
 - [Issues](https://github.com/naoiw/music-video-maker/issues)
 
 ## License

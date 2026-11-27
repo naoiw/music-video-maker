@@ -258,4 +258,22 @@ mod tests {
         assert!(progress(123).is_none());
         assert!(ActiveJob::register(124).is_ok());
     }
+
+    #[test]
+    #[ignore = "requires FFmpeg"]
+    fn reports_ffmpeg_failure_and_allows_another_process() {
+        let job = EncodeJob::default();
+        let error = run_ffmpeg(
+            &["-hide_banner", "-mvm-invalid-test-option"],
+            &job,
+            Phase::Encoding,
+            (0.0, 1.0),
+        )
+        .unwrap_err();
+        assert!(error.starts_with("[MVM:PROCESS_FAILED]"), "{error}");
+        assert!(error.contains("mvm-invalid-test-option"), "{error}");
+        assert!(job.check_cancelled().is_ok());
+        let next = EncodeJob::default();
+        run_ffmpeg(&["-version"], &next, Phase::Encoding, (0.0, 1.0)).unwrap();
+    }
 }
