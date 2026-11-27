@@ -5,10 +5,10 @@
 ## 結論
 
 - 静的ホスティングで UI とブラウザ内動画生成を提供することは技術的に可能。ただし現在の Tauri IPC をそのまま利用することはできない。
-- GitHub Pages は単一スレッド版を候補にする。標準の Pages で任意の COOP / COEP レスポンスヘッダーを設定する公式機能は確認できず、マルチスレッドを前提としない。
-- Cloudflare Pages は _headers によるオリジン間分離を構成できる。ただし配信アセットの1ファイル25 MiB制限があり、標準 FFmpeg.wasm core 0.12.10 の wasm（32.2 MB）はそのまま配信できない。
+- ユーザー方針により GitHub Pages を唯一の公開先候補とする。単一スレッド版を採用候補とする。標準の Pages で任意の COOP / COEP レスポンスヘッダーを設定する公式機能は確認できず、マルチスレッドを前提としない。
+- Cloudflare Pages は比較対象としてのみ記録し、実装・公開対象から外す。_headers によるオリジン間分離を構成できる。ただし配信アセットの1ファイル25 MiB制限があり、標準 FFmpeg.wasm core 0.12.10 の wasm（32.2 MB）はそのまま配信できない。
 - 現在の「ソースのみ公開し FFmpeg バイナリを再配布しない」方針を維持する。WASM もコンパイル済みバイナリであり、Pages に配置する行為は別の再配布になる。#29 のローカル試作と公開判断を分け、ライセンス・ソース提供・コーデック特許の確認と明示的な公開方針の決定なしに公開しない。
-- 当面の推奨はデスクトップ版を主系統に保ち、#29 はユーザーが依存を取得して localhost で動かす試作から始める。静的ホストの公開は別途判断する。
+- #29 は GitHub Pages の公開を前提とする。localhost のみの版を最終成果にしない。まず単一スレッドで短尺・実楽曲の実測と安全性・ライセンス確認を行い、公開条件を満たさなければブラウザ版を中止して #30 に進む。デスクトップ版は維持する。
 
 ## 1. ホスティング比較
 
@@ -22,15 +22,15 @@
 | 標準 core 0.12.10 の直接配置 | 容量面では候補 | wasm 約32.2 MBのため不可 |
 | 配布条件 | 対応ソース・告知等の確認が前提 | 同左 |
 
-Cloudflare で公開する場合、必要なコーデックに絞った core の再ビルド・サイズ実測、またはサイズ上限に適合する別の配信基盤を検討する。単に CDN に移すだけでライセンス義務や供給網のリスクが解消されるとは扱わない。ランタイムは外部へ素材を送信しない。外部 CDN に依存する自動取得やサービスワーカーによる擬似ヘッダー設定は初期案には採用しない。
+Cloudflare Pages は比較の記録に留める。GitHub Pages のプロジェクトサイト（想定 URL: https://naoiw.github.io/music-video-maker/、未設定・未公開）を対象に、Vite の base と worker/asset の解決をサブパスで検証する。ユーザーの選択により処理エンジンを読み込み、MP3・画像はブラウザ内だけで処理する。サービスワーカーによる擬似 COOP/COEP 設定は使用しない。
 
-Cloudflare の将来のマルチスレッド試験用ヘッダー例（現時点ではファイルを配置しない）:
+### GitHub Pages の配信構成
 
-    /*
-      Cross-Origin-Opener-Policy: same-origin
-      Cross-Origin-Embedder-Policy: require-corp
-
-HTTPS と実際のレスポンスヘッダー、crossOriginIsolated、SharedArrayBuffer の利用可否を確認する。同一オリジンに worker/core を配置する場合も、MIME（application/wasm）と CSP の許可範囲を確認する。GitHub Pages ではサブパスで worker/asset の URL が壊れないようにする。外部埋め込みや別オリジン素材の制約も考慮する。
+- UI、MIT ライセンスの @ffmpeg/ffmpeg ラッパーと worker を Vite でビルドし、第三者ライセンス表示を付ける。ラッパーを CDN から直接 import しない（公式 Installation の worker 制約）。
+- @ffmpeg/core の WASM と core JS は Pages の成果物に含めない。公式 Usage の Vite 向け ESM 例に沿って、ユーザー操作時に固定版の外部配布元から取得する候補を検証する。候補は https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/ 。取得元・版・実バイトの SHA-256 を確認してから Blob URL を生成し、未検証・不一致なら実行しない。固定 URL だけでは改ざん対策とはしない。
+- CDN 側の CORS、HTTPS、MIME、worker のロードを確認する。CSP は必要なスクリプト・worker・WASM・Blob と取得先だけを許可する設計とし、広い任意接続許可を避ける。CDN への接続は発生するが、素材や出力を送信しない設計とする。Network タブでも確認する。
+- GitHub Actions ではサブパス向けのブラウザビルドを行い、core JS / WASM が Pages の公開成果物に含まれないことを検査する。デスクトップ用 CI、バイナリ配布中止方針は維持する。公開 workflow の有効化は実測・法的確認後に行う。
+- GitHub Pages の月100 GBはソフト帯域上限。コアを直接外部から取得する構成なら Pages 自身からのコア配信は生じないが、外部配布元の利用条件・可用性を別途確認する。
 
 ## 2. 現行コードとの差分
 
@@ -58,19 +58,20 @@ worker に処理を隔離し、進捗の表示とキャンセル（terminate 後
 
 @ffmpeg/ffmpeg の JS ラッパーは MIT、core は FFmpeg と組み込まれたライブラリのライセンスに従う。標準 core は GPL-2.0-or-later 表記であり libx264 を含む構成を想定する。公開する場合は正確なバージョン、ビルド設定、対応ソース・依存ソース・パッチ・ビルドスクリプト、著作権・ライセンス表示、アプリとの結合形態、H.264/AAC 特許を別途確認する。ネイティブ exe の別プロセス起動と同じ法的評価を WASM に無条件に適用しない。
 
-ローカル試作でユーザーがパッケージを直接取得する方式は、リポジトリに WASM をコミット・公開する方式と区別する。公開済みサイトや配布用 ZIP を作らず、CI のアーティファクトにも含めない。WebCodecs 等のブラウザ標準 API を利用する選択肢もあるが、H.264/AAC 対応、MP4 mux、既存 FFmpeg フィルタの再現には別途調査が必要で、現時点では置き換えを決定しない。
+ローカル試作でユーザーがパッケージを直接取得する方式は、リポジトリに WASM をコミット・公開する方式と区別する。GitHub Pages では core JS / WASM を自らホストせず、外部配布元への直接取得を検討する。これは自らコアを再配布する場合と異なるが、結合形態・第三者ライセンス・特許・CDN の条件が無条件に解決するわけではない。公開判断まで core をリポジトリや公開アーティファクトに含めない。WebCodecs 等のブラウザ標準 API を利用する選択肢もあるが、H.264/AAC 対応、MP4 mux、既存 FFmpeg フィルタの再現には別途調査が必要で、現時点では置き換えを決定しない。
 
 ## 5. #29 の検証計画
 
-1. ローカル Vite のブラウザ試作で単一スレッド core を読み込む。必要依存の正確な版を選定し、lockfile 更新は明示して管理する。
+1. GitHub Pages のサブパスを前提に Vite のブラウザ試作を実装し、単一スレッド core を読み込む。必要依存の正確な版を選定し、pnpm で lockfile を生成・確認する。core の実バイトのハッシュ確認を公開前の必須条件とする。
 2. 自作の短いMP3・PNG/JPEG/GIFから H.264/AAC MP4 を生成し、FFprobe で尺・解像度・pixel format を独立検証する。素材を外部送信していないことを Network タブで確認する。
 3. worker の中断・再試行・容量制限と、破損素材のエラー処理を試験。Chromium 系（Chrome / Edge）を初期候補とし、Firefox/Safari/モバイルは個別検証。
 4. 既存 GUI への段階的統合、試聴、設定・プリセット、画像配置と音声フィルタを検証。Windows版CIと従来の出力条件を維持する。
-5. 公開方針の承認・ライセンス確認後に限り、GitHub Pages の単一スレッド構成と Cloudflare Pages のサイズ・ヘッダーを実機検証する。ブラウザでの動作は未確認のため、公開サイトの稼働を完了条件とはしない。
+5. PC Chrome/Edge で数分の実楽曲を 1080p/30fps で生成し、時間・メモリ・出力品質を測る。実用性とライセンス・セキュリティの条件を確認して GitHub Pages に公開し、実 URL で初回読み込み・生成・再試行を確認する。条件を満たせず、実用的な代替案もない場合はブラウザ版を中止する。現在は実測・公開未実施。
 
 ## 参考資料（2026-11-28 閲覧）
 
 - [ffmpeg.wasm Overview](https://ffmpegwasm.netlify.app/docs/overview/)
+- [ffmpeg.wasm Installation](https://ffmpegwasm.netlify.app/docs/getting-started/installation/)
 - [ffmpeg.wasm Usage](https://ffmpegwasm.netlify.app/docs/getting-started/usage/)
 - [ffmpeg.wasm FAQ](https://ffmpegwasm.netlify.app/docs/faq/)
 - [ffmpeg.wasm Performance](https://ffmpegwasm.netlify.app/docs/performance/)
