@@ -1,7 +1,8 @@
 import "./styles.css";
 import workerSource from "./encoder-worker.js?raw";
 import { prepareLoopingGif } from "./gif-loop";
-import { assertInputs, encodeArgs, imageKind, LIMITS, type Resolution, type Fit } from "./encode-plan";
+import { settingsFields } from "../../src/services/settings-schema";
+import { assertInputs, encodeArgs, imageKind, LIMITS, browserOutputDefaults, browserResolutions, type Resolution, type Fit } from "./encode-plan";
 
 function get<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -12,6 +13,10 @@ const audio = get<HTMLInputElement>("audio");
 const visual = get<HTMLInputElement>("visual");
 const resolution = get<HTMLSelectElement>("resolution");
 const fit = get<HTMLSelectElement>("fit");
+const fps = get<HTMLSelectElement>("fps");
+const quality = get<HTMLSelectElement>("quality");
+const settingsReset = get<HTMLButtonElement>("settings-reset");
+const previewEmpty = get<HTMLElement>("preview-empty");
 const encode = get<HTMLButtonElement>("encode");
 const cancel = get<HTMLButtonElement>("cancel");
 const progress = get<HTMLProgressElement>("progress");
@@ -36,7 +41,7 @@ function setStatus(message: string, state = "busy") {
 function refresh() {
   encode.disabled = busy || !audio.files?.length || !visual.files?.length;
   cancel.disabled = !busy;
-  for (const el of [audio,visual,resolution,fit]) el.disabled = busy;
+  for (const el of [audio,visual,resolution,fit,fps,quality,settingsReset]) el.disabled = busy;
 }
 function clearOutput() {
   output.pause(); output.removeAttribute("src"); output.load(); output.hidden = true;
@@ -71,7 +76,8 @@ function metadataDuration(file: File): Promise<number> {
 function refreshPreview() {
   const blurred = fit.value === "blurred";
   preview.dataset.fit = fit.value;
-  preview.hidden = !imageURL;
+  preview.dataset.resolution = resolution.value;
+  previewEmpty.hidden = Boolean(imageURL);
   background.hidden = !imageURL || !blurred;
   image.style.width = "";
   image.style.height = "";
@@ -85,6 +91,19 @@ function refreshPreview() {
 image.addEventListener("load", refreshPreview);
 fit.addEventListener("change", () => { clearOutput(); refreshPreview(); });
 resolution.addEventListener("change", () => { clearOutput(); refreshPreview(); });
+for (const el of [fps,quality]) el.addEventListener("change", clearOutput);
+function resetOutputSettings() {
+  resolution.value = browserOutputDefaults.resolution;
+  fit.value = browserOutputDefaults.fit;
+  fps.value = String(browserOutputDefaults.fps);
+  quality.value = String(browserOutputDefaults.crf);
+  refreshPreview();
+}
+settingsReset.addEventListener("click", () => { clearOutput(); resetOutputSettings(); });
+// Guard the shared schema/HTML boundary against divergent options.
+for (const [control,expected] of [[resolution,browserResolutions],[fit,settingsFields.fit.options],[fps,settingsFields.fps.options],[quality,settingsFields.quality.options]] as const) {
+  if (Array.from(control.options, option => option.value).join(",") !== expected.join(",")) throw new Error("Output options do not match shared settings: " + control.id);
+}
 audio.addEventListener("change", () => { clearOutput(); refresh(); });
 visual.addEventListener("change", () => {
   clearOutput();
@@ -118,7 +137,7 @@ encode.addEventListener("click", async () => {
     const [audioBytes,originalVisualBytes] = await Promise.all([a.arrayBuffer(),v.arrayBuffer()]);
     const preparedGif = kind === "gif" ? prepareLoopingGif(new Uint8Array(originalVisualBytes)) : null;
     const visualBytes = preparedGif?.bytes.buffer ?? originalVisualBytes;
-    const args = encodeArgs(kind,resolution.value as Resolution,fit.value as Fit,preparedGif?.frameDelays);
+    const args = encodeArgs(kind,resolution.value as Resolution,fit.value as Fit,preparedGif?.frameDelays,Number(fps.value),Number(quality.value));
     if (job !== sequence) return;
     const workerURL = URL.createObjectURL(new Blob([workerSource],{type:"text/javascript"}));
     try { worker = new Worker(workerURL); } finally { URL.revokeObjectURL(workerURL); }
@@ -144,4 +163,5 @@ encode.addEventListener("click", async () => {
   }
 });
 window.addEventListener("pagehide", () => { stop(); if (imageURL) URL.revokeObjectURL(imageURL); if (outputURL) URL.revokeObjectURL(outputURL); });
+resetOutputSettings();
 refresh();

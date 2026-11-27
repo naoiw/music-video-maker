@@ -5,7 +5,9 @@
 label { font-weight: 600; }
 input[type=file] { width: 100%; min-width: 0; }
 #output { width: 100%; max-height: 360px; object-fit: contain; border-radius: 6px; background: #000; }
-.web-preview { padding: 0; container-type: size; background: #000; }
+.web-preview { padding: 0; container-type: size; background: #000; width: 100%; }
+.web-preview[data-resolution="1080x1920"] { width: min(100%, 300px); }
+#preview-empty { padding: 12px; }
 .web-preview[data-fit="blurred"] #image-preview { inset: auto; top: 50%; left: 50%; transform: translate(-50%, -50%); max-height: 80%; max-width: 100%; background: #000; }
 .web-preview[data-fit="blurred"] #preview-background { background: #000; }
 [hidden] { display: none !important; }
