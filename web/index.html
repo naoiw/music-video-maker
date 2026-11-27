@@ -31,11 +31,22 @@
           <label>形式<input value="MP4 · H.264 / AAC" readonly></label>
         </div>
         <div class="actions"><button id="settings-reset" type="button">出力設定を初期化</button></div>
+        <p id="settings-status" class="muted" role="status"></p>
         <p class="muted">最大5分、MP3 50 MiB、画像32 MiB・4000万画素。高解像度・60 fpsでは処理時間とメモリ使用量が増えます。</p>
       </section>
       <section class="panel" aria-labelledby="filter-title">
         <h2 id="filter-title">音声フィルタ</h2>
         <fieldset id="web-filter-controls">
+          <fieldset id="preset-controls" class="preset-controls">
+            <h3>フィルタプリセット</h3>
+            <label for="preset-select">保存済みプリセット</label>
+            <select id="preset-select"><option value="">プリセットを選択</option></select>
+            <div class="actions"><button type="button" id="preset-load">適用</button><button type="button" id="preset-delete">削除</button></div>
+            <label for="preset-name">プリセット名</label>
+            <input id="preset-name" type="text" maxlength="40" placeholder="例：Suno ロック">
+            <div class="actions"><button type="button" id="preset-save">現在のフィルタを保存</button><button type="button" id="preset-clear">全削除</button></div>
+            <p id="preset-status" class="muted" role="status"></p>
+          </fieldset>
         <fieldset id="noise-filter" disabled class="filters">
           <label><input type="checkbox" id="noise-enabled" /> ノイズ除去（FFT）</label>
           <fieldset id="noise-parameters" disabled class="filter-parameters">
@@ -127,7 +138,7 @@
       </section>
     </div>
   </main>
-  <footer class="footer muted"><a href="https://github.com/naoiw/music-video-maker">GitHub</a> · <a href="https://github.com/ffmpegwasm/ffmpeg.wasm">FFmpeg.wasm</a> · <a href="https://ffmpeg.org/legal.html">FFmpeg licensing</a><p>技術検証版。プリセット・設定の永続化は未実装。</p></footer>
+  <footer class="footer muted"><a href="https://github.com/naoiw/music-video-maker">GitHub</a> · <a href="https://github.com/ffmpegwasm/ffmpeg.wasm">FFmpeg.wasm</a> · <a href="https://ffmpeg.org/legal.html">FFmpeg licensing</a><p>技術検証版。設定・プリセットはこのブラウザに保存されます。素材は保存しません。</p></footer>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

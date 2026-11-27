@@ -1,6 +1,10 @@
 import "./styles.css";
 import workerSource from "./encoder-worker.js?raw";
 import { initializeAudioPreview } from "./audio-preview";
+import { createWebStore, defaultWebSettings } from "./settings-storage";
+import { initializeWebPresets } from "./presets";
+import { filterIds } from "../../src/services/preset-schema";
+import type { SettingsValues } from "../../src/services/settings-schema";
 import { prepareLoopingGif } from "./gif-loop";
 import { inspectImageDimensions, assertImageDimensions } from "./image-dimensions";
 import { activeFilterNames, compileWebAudioFilters } from "./audio-filter-plan";
@@ -39,8 +43,11 @@ let visualRevision = 0;
 let validatedVisual: File | null = null;
 let outputURL = "";
 let lines: string[] = [];
-const filters = initializeWebAudioFilters(() => { clearOutput(); audioPreview.invalidate("フィルタ設定を変更しました。再試聴できます。"); });
+const store = createWebStore(() => window.localStorage);
+const settingsStatus = get<HTMLElement>("settings-status");
+const filters = initializeWebAudioFilters(() => { clearOutput(); audioPreview.invalidate("フィルタ設定を変更しました。再試聴できます。"); persistSettings(); });
 const audioPreview = initializeAudioPreview({file:()=>audio.files?.[0],values:filters.values,metadataDuration});
+const presets = initializeWebPresets(store,filters.snapshot,values=>filters.apply(values));
 
 function setStatus(message: string, state = "busy") {
   status.textContent = message;
@@ -51,6 +58,7 @@ function refresh() {
   cancel.disabled = !busy;
   for (const el of [audio,visual,resolution,fit,fps,quality,settingsReset]) el.disabled = busy;
   filters.setBusy(busy);
+  presets.setBusy(busy);
   audioPreview.setExportBusy(busy);
 }
 function clearOutput() {
@@ -99,9 +107,9 @@ function refreshPreview() {
   }
 }
 image.addEventListener("load", refreshPreview);
-fit.addEventListener("change", () => { clearOutput(); refreshPreview(); });
-resolution.addEventListener("change", () => { clearOutput(); refreshPreview(); });
-for (const el of [fps,quality]) el.addEventListener("change", clearOutput);
+fit.addEventListener("change", () => { clearOutput(); refreshPreview(); persistSettings(); });
+resolution.addEventListener("change", () => { clearOutput(); refreshPreview(); persistSettings(); });
+for (const el of [fps,quality]) el.addEventListener("change", () => { clearOutput(); persistSettings(); });
 function resetOutputSettings() {
   resolution.value = browserOutputDefaults.resolution;
   fit.value = browserOutputDefaults.fit;
@@ -109,7 +117,38 @@ function resetOutputSettings() {
   quality.value = String(browserOutputDefaults.crf);
   refreshPreview();
 }
-settingsReset.addEventListener("click", () => { clearOutput(); resetOutputSettings(); });
+function persistSettings() {
+  let values: SettingsValues;
+  try {
+    values={...filters.snapshot(), resolution:resolution.value, fps:fps.value, fit:fit.value, quality:quality.value};
+  } catch {
+    settingsStatus.textContent="無効な設定値があるため、最後に保存した有効な設定を保持します。";
+    return;
+  }
+  try {
+    store.writeSettings(values);
+    settingsStatus.textContent="設定を保存しました。";
+  } catch {
+    settingsStatus.textContent="設定を保存できませんでした。この画面での操作は継続できます。";
+  }
+}
+function restoreSettings() {
+  let values=defaultWebSettings();
+  settingsStatus.textContent="初期設定を使用しています。";
+  try {
+    const saved=store.readSettings();
+    if(saved){values=saved;settingsStatus.textContent="前回の設定を復元しました。";}
+  } catch {
+    settingsStatus.textContent="保存設定を読み込めないため、初期設定を使用します。";
+  }
+  resolution.value=String(values.resolution);
+  fps.value=String(values.fps);
+  fit.value=String(values.fit);
+  quality.value=String(values.quality);
+  filters.apply(Object.fromEntries(filterIds.map(id=>[id,values[id]])),false);
+  refreshPreview();
+}
+settingsReset.addEventListener("click", () => { clearOutput(); resetOutputSettings(); persistSettings(); });
 // Guard the shared schema/HTML boundary against divergent options.
 for (const [control,expected] of [[resolution,browserResolutions],[fit,settingsFields.fit.options],[fps,settingsFields.fps.options],[quality,settingsFields.quality.options]] as const) {
   if (Array.from(control.options, option => option.value).join(",") !== expected.join(",")) throw new Error("Output options do not match shared settings: " + control.id);
@@ -242,5 +281,5 @@ window.addEventListener("pageshow", event => {
     void refreshVisualSource();
   }
 });
-resetOutputSettings();
+restoreSettings();
 refresh();
