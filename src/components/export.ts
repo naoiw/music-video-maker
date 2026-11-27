@@ -1,3 +1,4 @@
+import { reportError } from "./diagnostics";
 import { getSelectedAudio } from "./audio-source";
 import { getFilterChain } from "./audio-filters";
 import { getSelectedVisual } from "./visual-source";
@@ -6,6 +7,7 @@ import { cancelEncode, encodeVideo, getEncodeProgress, selectOutput, type Output
 export function initializeExport(available: boolean, refreshPreview: () => void): () => void {
   const audioButton = document.querySelector<HTMLButtonElement>("#select-audio");
   const visualButton = document.querySelector<HTMLButtonElement>("#select-visual");
+  const resetSettingsButton = document.querySelector<HTMLButtonElement>("#settings-reset");
   const outputButton = document.querySelector<HTMLButtonElement>("#select-output");
   const startButton = document.querySelector<HTMLButtonElement>("#start-encode");
   const cancelButton = document.querySelector<HTMLButtonElement>("#cancel-encode");
@@ -21,7 +23,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
   const filterPanel = document.querySelector<HTMLElement>("#filter-title")?.parentElement;
   const filterSummary = document.querySelector<HTMLElement>("#export-filter-summary");
   if (!filterPanel || !filterSummary || !fieldset || !resolution || !fps || !fit || !quality || !preview ||
-      !audioButton || !visualButton || !outputButton || !startButton ||
+      !audioButton || !visualButton || !resetSettingsButton || !outputButton || !startButton ||
       !outputName || !status || !progress || !cancelButton) {
     throw new Error("Missing export elements");
   }
@@ -54,6 +56,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
   function refresh(): void {
     const settings = readSettings();
     fieldset!.disabled = !available || encoding;
+    resetSettingsButton!.disabled = encoding;
     for (const section of filterPanel!.querySelectorAll<HTMLFieldSetElement>(":scope > fieldset")) {
       section.disabled = !available || encoding;
     }
@@ -98,7 +101,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
         outputName.textContent = outputPath;
       }
     } catch (error) {
-      errorMessage = `保存先の選択に失敗: ${String(error)}`;
+      errorMessage = reportError("output", error);
     } finally {
       choosingOutput = false;
       refresh();
@@ -154,7 +157,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
       if (activeJobId !== id) return;
       cancelRequested = false;
       cancelButton.disabled = !canCancel;
-      status.textContent = `中断要求に失敗: ${String(error)}`;
+      status.textContent = reportError("cancel", error);
     }
   });
 
@@ -192,7 +195,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
     } catch (error) {
       resultMessage = String(error) === "ENCODE_CANCELLED"
         ? "生成を中断しました。再実行できます。"
-        : `生成失敗: ${String(error)}`;
+        : reportError("encode", error);
     } finally {
       activeJobId = null;
       window.clearInterval(timer);

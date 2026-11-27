@@ -1,4 +1,5 @@
-import { selectAudio, type AudioSource } from "../services/audio";
+import { reportError } from "./diagnostics";
+import { loadAudio, selectAudio, type AudioSource } from "../services/audio";
 
 let selectedAudio: AudioSource | null = null;
 
@@ -16,7 +17,7 @@ function formatDuration(seconds: number): string {
     : `${minutes}:${rest}`;
 }
 
-export function initializeAudioSource(onChange: () => void = () => {}): void {
+export function initializeAudioSource(onChange: () => void = () => {}): (path?: string) => Promise<void> {
   const button = document.querySelector<HTMLButtonElement>("#select-audio");
   const name = document.querySelector<HTMLElement>("#audio-name");
   const details = document.querySelector<HTMLElement>("#audio-details");
@@ -26,13 +27,14 @@ export function initializeAudioSource(onChange: () => void = () => {}): void {
   }
 
   button.disabled = false;
-  button.addEventListener("click", async () => {
+  const load = async (path?: string): Promise<void> => {
+    if (button.disabled) return;
     button.disabled = true;
     onChange();
     status.textContent = "MP3を確認しています…";
 
     try {
-      const source = await selectAudio();
+      const source = (path === undefined ? await selectAudio() : await loadAudio(path));
       if (!source) {
         status.textContent = "";
         return;
@@ -50,10 +52,12 @@ export function initializeAudioSource(onChange: () => void = () => {}): void {
       ].join(" · ");
       status.textContent = "";
     } catch (error) {
-      status.textContent = `読み込み失敗: ${String(error)}`;
+      status.textContent = reportError("audio", error);
     } finally {
       button.disabled = false;
       onChange();
     }
-  });
+  };
+  button.addEventListener("click", () => { void load(); });
+  return load;
 }

@@ -11,6 +11,8 @@
     <div class="column">
       <section class="panel" aria-labelledby="source-title">
         <h2 id="source-title">素材</h2>
+        <p id="source-drop-hint" class="muted" hidden>MP3・画像をウィンドウ内にドラッグ＆ドロップ</p>
+        <p id="source-drop-status" class="muted" role="status"></p>
         <div class="source"><div><h3>音声</h3><p id="audio-name">MP3 · 未選択</p><p id="audio-details"></p><p id="audio-status" role="status"></p></div><button type="button" id="select-audio" disabled>選択</button></div>
         <div class="source"><div><h3>画像</h3><p id="visual-name">PNG / JPEG / GIF · 未選択</p><p id="visual-details"></p><p id="visual-status" role="status"></p></div><button type="button" id="select-visual" disabled>選択</button></div>
       </section>
@@ -23,9 +25,22 @@
           <label>映像品質<select id="quality"><option value="16">高画質 (CRF 16)</option><option value="20" selected>標準 (CRF 20)</option><option value="24">容量優先 (CRF 24)</option></select></label>
           <label>形式<input value="MP4 · H.264 / AAC" readonly /></label></div>
         </fieldset>
+        <div class="actions"><button type="button" id="settings-reset" disabled>出力・フィルタ設定を初期化</button></div>
+        <p id="settings-status" class="muted" role="status"></p>
       </section>
       <section class="panel" aria-labelledby="filter-title">
         <h2 id="filter-title">音声フィルタ</h2>
+        <fieldset id="preset-controls" disabled class="preset-controls">
+          <h3>フィルタプリセット</h3>
+          <label for="preset-select">保存済みプリセット</label>
+          <select id="preset-select" disabled><option value="">プリセットを選択</option></select>
+          <div class="actions"><button type="button" id="preset-load" disabled>適用</button><button type="button" id="preset-delete" disabled>削除</button></div>
+          <label for="preset-name">プリセット名</label>
+          <input id="preset-name" type="text" maxlength="40" placeholder="例：Suno ロック" disabled />
+          <div class="actions"><button type="button" id="preset-save" disabled>現在のフィルタを保存</button></div>
+          <div class="actions"><button type="button" id="preset-defaults" disabled>フィルタを初期化</button><button type="button" id="preset-clear" disabled>全削除</button></div>
+          <p id="preset-status" class="muted" role="status"></p>
+        </fieldset>
         <fieldset id="noise-filter" disabled class="filters">
           <label><input type="checkbox" id="noise-enabled" /> ノイズ除去（FFT）</label>
           <fieldset id="noise-parameters" disabled class="filter-parameters">
@@ -103,7 +118,14 @@
       </section>
     </div>
   </main>
-  <footer class="footer"><details><summary>実行環境</summary><p id="media-status" role="status">メディア処理環境を確認中</p></details></footer>
+  <footer class="footer">
+    <details><summary>実行環境</summary><p id="media-status" role="status">メディア処理環境を確認中</p></details>
+    <details id="diagnostics" hidden>
+      <summary>診断情報（直近8件）</summary>
+      <p class="muted">原因調査用の情報です。ファイルパス等が含まれる場合があるため、共有前に確認してください。</p>
+      <div id="diagnostic-list"></div>
+    </details>
+  </footer>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

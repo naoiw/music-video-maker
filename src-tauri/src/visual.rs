@@ -1,3 +1,4 @@
+use crate::errors;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use image::{ImageFormat, ImageReader};
 use serde::Serialize;
@@ -78,19 +79,24 @@ fn inspect_image(name: String, expected: ImageFormat, bytes: &[u8]) -> Result<Vi
 }
 
 pub(crate) fn load_visual(path: &str) -> Result<VisualInfo, String> {
+    load_visual_inner(path).map_err(|error| errors::tagged("INPUT_IMAGE", error))
+}
+
+fn load_visual_inner(path: &str) -> Result<VisualInfo, String> {
     let path = Path::new(path);
     let format = expected_format(path)?;
     let metadata = path
         .metadata()
-        .map_err(|error| format!("ファイルを開けません: {error}"))?;
+        .map_err(|error| errors::io_error("画像ファイルを開けません", &error, "INPUT_IMAGE"))?;
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_IMAGE_BYTES as u64 {
         return Err("通常の画像ファイル（32 MiB 以下）を選択してください。".into());
     }
-    let file = File::open(path).map_err(|error| format!("画像を開けません: {error}"))?;
+    let file = File::open(path)
+        .map_err(|error| errors::io_error("画像を開けません", &error, "INPUT_IMAGE"))?;
     let mut bytes = Vec::new();
     file.take((MAX_IMAGE_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("画像を読み込めません: {error}"))?;
+        .map_err(|error| errors::io_error("画像を読み込めません", &error, "INPUT_IMAGE"))?;
     let name = path
         .file_name()
         .ok_or_else(|| "ファイル名を取得できません。".to_owned())?
@@ -151,5 +157,35 @@ mod tests {
         assert!(dimensions_are_supported(1920, 1080));
         assert!(!dimensions_are_supported(0, 100));
         assert!(!dimensions_are_supported(100_000, 100_000));
+    }
+
+    #[test]
+    fn loads_local_images_and_rejects_invalid_file_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("画像.JPEG");
+        let bytes = fixture(ImageFormat::Jpeg);
+        std::fs::write(&path, &bytes).unwrap();
+        let info = load_visual(path.to_str().unwrap()).unwrap();
+        assert_eq!(info.name, "画像.JPEG");
+        assert_eq!((info.width, info.height), (12, 8));
+        assert_eq!(STANDARD.decode(info.preview_base64).unwrap(), bytes);
+
+        let empty = dir.path().join("empty.png");
+        let oversized = dir.path().join("oversized.png");
+        let missing = dir.path().join("missing.png");
+        std::fs::write(&empty, []).unwrap();
+        File::create(&oversized)
+            .unwrap()
+            .set_len(MAX_IMAGE_BYTES as u64 + 1)
+            .unwrap();
+        for (path, code) in [
+            (empty, "[MVM:INPUT_IMAGE]"),
+            (oversized, "[MVM:INPUT_IMAGE]"),
+            (missing, "[MVM:PATH_MISSING]"),
+        ] {
+            assert!(load_visual(path.to_str().unwrap())
+                .unwrap_err()
+                .starts_with(code));
+        }
     }
 }

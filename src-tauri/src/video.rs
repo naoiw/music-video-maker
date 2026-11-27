@@ -238,16 +238,40 @@ fn validate_destination(path: &Path) -> Result<&Path, String> {
             .and_then(|value| value.to_str())
             .is_some_and(|value| value.eq_ignore_ascii_case("mp4"))
     {
-        return Err("MP4 の保存先を指定してください。".into());
+        return Err(crate::errors::tagged(
+            "OUTPUT_PATH",
+            "MP4 の保存先を指定してください。",
+        ));
     }
     match path.symlink_metadata() {
-        Ok(_) => return Err("既存ファイルは上書きできません。別の名前を指定してください。".into()),
+        Ok(_) => {
+            return Err(crate::errors::tagged(
+                "OUTPUT_EXISTS",
+                "既存ファイルは上書きできません。別の名前を指定してください。",
+            ));
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(format!("保存先を確認できません: {error}")),
+        Err(error) => {
+            return Err(crate::errors::io_error(
+                "保存先を確認できません",
+                &error,
+                "OUTPUT_IO",
+            ));
+        }
     }
-    path.parent()
-        .filter(|parent| parent.is_dir())
-        .ok_or_else(|| "保存先のフォルダがありません。".to_owned())
+    let parent = path
+        .parent()
+        .ok_or_else(|| crate::errors::tagged("OUTPUT_PATH", "保存先のフォルダがありません。"))?;
+    let metadata = parent.metadata().map_err(|error| {
+        crate::errors::io_error("保存先のフォルダを確認できません", &error, "OUTPUT_IO")
+    })?;
+    if !metadata.is_dir() {
+        return Err(crate::errors::tagged(
+            "OUTPUT_PATH",
+            "保存先がフォルダではありません。",
+        ));
+    }
+    Ok(parent)
 }
 
 struct PreparedAudio {
@@ -268,7 +292,9 @@ fn prepare_audio(
     let directory = tempfile::Builder::new()
         .prefix(".music-video-maker-audio-")
         .tempdir_in(parent)
-        .map_err(|error| format!("音声の一時フォルダを作成できません: {error}"))?;
+        .map_err(|error| {
+            crate::errors::io_error("音声の一時フォルダを作成できません", &error, "OUTPUT_IO")
+        })?;
     let path = directory.path().join("filtered.wav");
     let output = path
         .to_str()
@@ -329,11 +355,15 @@ fn prepare_audio(
         "-i",
         output,
     ])?;
-    let duration = positive_duration(String::from_utf8_lossy(&probe.stdout).trim())?;
+    let duration = positive_duration(String::from_utf8_lossy(&probe.stdout).trim())
+        .map_err(|error| crate::errors::tagged("OUTPUT_VERIFY", error))?;
     if (duration - info.duration_seconds).abs() > 0.2 {
-        return Err(format!(
-            "音声加工後の長さが入力と一致しません（入力 {:.3} 秒、加工後 {duration:.3} 秒）。",
-            info.duration_seconds
+        return Err(crate::errors::tagged(
+            "OUTPUT_VERIFY",
+            format!(
+                "音声加工後の長さが入力と一致しません（入力 {:.3} 秒、加工後 {duration:.3} 秒）。",
+                info.duration_seconds
+            ),
         ));
     }
     job.check_cancelled()?;
@@ -353,7 +383,9 @@ pub(crate) fn encode_video(
     job: &EncodeJob,
 ) -> Result<VideoInfo, String> {
     job.check_cancelled()?;
-    settings.validate()?;
+    settings
+        .validate()
+        .map_err(|error| crate::errors::tagged("OUTPUT_SETTINGS", error))?;
     let _guard = ENCODE_LOCK
         .try_lock()
         .map_err(|_| "別の動画生成を実行中です。".to_owned())?;
@@ -362,7 +394,8 @@ pub(crate) fn encode_video(
 
     // Revalidate sources at export time; do not trust GUI metadata.
     let audio_info = audio::probe_audio(audio_path)?;
-    let audio_graph = audio_filters::compile(filters, audio_info.sample_rate)?;
+    let audio_graph = audio_filters::compile(filters, audio_info.sample_rate)
+        .map_err(|error| crate::errors::tagged("FILTER", error))?;
     job.set_duration(audio_info.duration_seconds);
     job.check_cancelled()?;
     let image = visual::load_visual(visual_path)?;
@@ -395,7 +428,9 @@ pub(crate) fn encode_video(
         .prefix(".music-video-maker-")
         .suffix(".mp4")
         .tempfile_in(parent)
-        .map_err(|error| format!("一時ファイルを作成できません: {error}"))?
+        .map_err(|error| {
+            crate::errors::io_error("一時ファイルを作成できません", &error, "OUTPUT_IO")
+        })?
         .into_temp_path();
     let temp_path = temporary
         .to_str()
@@ -431,23 +466,29 @@ pub(crate) fn encode_video(
         "-i",
         temp_path,
     ])?;
-    let duration_seconds = validate_output(&probe.stdout, settings)?;
+    let duration_seconds = validate_output(&probe.stdout, settings)
+        .map_err(|error| crate::errors::tagged("OUTPUT_VERIFY", error))?;
     if let Some(audio) = prepared
         .as_ref()
         .filter(|audio| (duration_seconds - audio.duration).abs() > 0.2)
     {
-        return Err(format!(
-            "動画の長さが加工音と一致しません（動画 {duration_seconds:.3} 秒、加工音 {:.3} 秒）。",
-            audio.duration
+        return Err(crate::errors::tagged(
+            "OUTPUT_VERIFY",
+            format!(
+                "動画の長さが加工音と一致しません（動画 {duration_seconds:.3} 秒、加工音 {:.3} 秒）。",
+                audio.duration
+            ),
         ));
     }
     let size_bytes = std::fs::metadata(temp_path)
-        .map_err(|error| format!("出力ファイルを確認できません: {error}"))?
+        .map_err(|error| {
+            crate::errors::io_error("出力ファイルを確認できません", &error, "OUTPUT_IO")
+        })?
         .len();
     job.begin_saving()?;
-    temporary
-        .persist_noclobber(destination)
-        .map_err(|error| format!("動画を保存できません: {error}"))?;
+    temporary.persist_noclobber(destination).map_err(|error| {
+        crate::errors::io_error("動画を保存できません", &error.error, "OUTPUT_IO")
+    })?;
 
     Ok(VideoInfo {
         duration_seconds,
@@ -975,5 +1016,189 @@ mod tests {
                 .to_string_lossy()
                 .starts_with(".music-video-maker-")
         }));
+    }
+
+    #[test]
+    fn accepts_every_supported_output_settings_combination() {
+        for (width, height) in [(1920, 1080), (1080, 1080), (1080, 1920)] {
+            for fps in [24, 30, 60] {
+                for crf in [16, 20, 24] {
+                    for fit in [ImageFit::Contain, ImageFit::Cover] {
+                        let settings = OutputSettings {
+                            width,
+                            height,
+                            fps,
+                            crf,
+                            fit,
+                        };
+                        assert!(settings.validate().is_ok());
+                        let args = encoder_args(
+                            "audio.mp3",
+                            "cover.png",
+                            VisualKind::Png,
+                            "out.mp4",
+                            settings,
+                            None,
+                        );
+                        for (flag, value) in [
+                            ("-r", fps.to_string()),
+                            ("-crf", crf.to_string()),
+                            ("-c:v", "libx264".into()),
+                            ("-c:a", "aac".into()),
+                            ("-pix_fmt", "yuv420p".into()),
+                            ("-movflags", "+faststart".into()),
+                        ] {
+                            assert!(args
+                                .windows(2)
+                                .any(|pair| pair[0] == flag && pair[1] == value));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn output_verification_rejects_each_invalid_stream_property() {
+        let valid = serde_json::json!({
+            "streams": [
+                {"codec_type":"video","codec_name":"h264","width":1920,"height":1080,
+                 "pix_fmt":"yuv420p","r_frame_rate":"30/1","duration":"2.0"},
+                {"codec_type":"audio","codec_name":"aac","duration":"2.01"}
+            ],
+            "format":{"duration":"2.01"}
+        });
+        let settings = OutputSettings::default();
+        let check = |value: &serde_json::Value| {
+            validate_output(&serde_json::to_vec(value).unwrap(), settings)
+        };
+        assert_eq!(check(&valid).unwrap(), 2.01);
+        for (index, key, value) in [
+            (0_usize, "codec_name", serde_json::json!("hevc")),
+            (1, "codec_name", serde_json::json!("mp3")),
+            (0, "width", serde_json::json!(1080)),
+            (0, "height", serde_json::json!(720)),
+            (0, "pix_fmt", serde_json::json!("yuv444p")),
+            (0, "r_frame_rate", serde_json::json!("60/1")),
+            (0, "duration", serde_json::json!("2.4")),
+            (1, "duration", serde_json::json!("N/A")),
+        ] {
+            let mut invalid = valid.clone();
+            invalid["streams"][index][key] = value;
+            assert!(check(&invalid).is_err(), "{key}");
+        }
+        let mut extra = valid.clone();
+        extra["streams"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"codec_type":"audio","codec_name":"aac"}));
+        assert!(check(&extra).is_err());
+        let mut invalid_duration = valid;
+        invalid_duration["format"]["duration"] = serde_json::json!("NaN");
+        assert!(check(&invalid_duration).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with libmp3lame, libx264, AAC and FFprobe"]
+    fn encodes_after_invalid_sources_and_verifies_published_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("音声 test.mp3");
+        let cover = dir.path().join("画像 %d.png");
+        let output = dir.path().join("出力 test.mp4");
+        let audio_path = audio.to_str().unwrap();
+        let cover_path = cover.to_str().unwrap();
+        let output_path = output.to_str().unwrap();
+        let settings = OutputSettings {
+            width: 1080,
+            height: 1080,
+            fps: 24,
+            crf: 24,
+            fit: ImageFit::Cover,
+        };
+        let filters: Vec<audio_filters::FilterEntry> =
+            serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#)
+                .unwrap();
+        let encode = || {
+            encode_video(
+                audio_path,
+                cover_path,
+                output_path,
+                settings,
+                &filters,
+                &EncodeJob::default(),
+            )
+        };
+        image::DynamicImage::new_rgb8(513, 777)
+            .save(&cover)
+            .unwrap();
+        std::fs::write(&audio, b"not an MP3").unwrap();
+        assert!(encode().is_err());
+        assert!(!output.exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=44100:duration=1.5",
+                "-c:a",
+                "libmp3lame",
+                audio_path,
+            ])
+            .unwrap();
+        let original = std::fs::read(&audio).unwrap();
+        std::fs::write(&cover, b"not a PNG").unwrap();
+        assert!(encode().unwrap_err().starts_with("[MVM:INPUT_IMAGE]"));
+        assert!(!output.exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+
+        image::DynamicImage::new_rgb8(513, 777)
+            .save(&cover)
+            .unwrap();
+        let info = encode().unwrap();
+        assert!(info.size_bytes > 0);
+        assert_eq!(info.size_bytes, std::fs::metadata(&output).unwrap().len());
+        // Probe the published MP4 independently of the application's validator.
+        let probe = Tool::Ffprobe
+            .run(&[
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-of",
+                "json",
+                output_path,
+            ])
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+        let streams = result["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 2);
+        let video = streams
+            .iter()
+            .find(|stream| stream["codec_type"] == "video")
+            .unwrap();
+        let audio_stream = streams
+            .iter()
+            .find(|stream| stream["codec_type"] == "audio")
+            .unwrap();
+        assert_eq!(video["codec_name"], "h264");
+        assert_eq!(video["width"], 1080);
+        assert_eq!(video["height"], 1080);
+        assert_eq!(video["pix_fmt"], "yuv420p");
+        assert_eq!(video["r_frame_rate"], "24/1");
+        assert_eq!(audio_stream["codec_name"], "aac");
+        for stream in [video, audio_stream, &result["format"]] {
+            let duration: f64 = stream["duration"].as_str().unwrap().parse().unwrap();
+            assert!((duration - 1.5).abs() < 0.2, "{duration}");
+        }
+        let published = std::fs::read(&output).unwrap();
+        assert!(encode().unwrap_err().starts_with("[MVM:OUTPUT_EXISTS]"));
+        assert_eq!(std::fs::read(&output).unwrap(), published);
+        assert_eq!(std::fs::read(&audio).unwrap(), original);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3);
     }
 }

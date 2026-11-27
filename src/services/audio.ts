@@ -21,6 +21,10 @@ export async function selectAudio(): Promise<AudioSource | null> {
   if (path === null) return null;
   if (typeof path !== "string") throw new Error("MP3を1ファイル選択してください。");
 
+  return loadAudio(path);
+}
+
+export async function loadAudio(path: string): Promise<AudioSource> {
   const info = await invoke<Omit<AudioSource, "path">>("probe_audio", { path });
   return { ...info, path };
 }

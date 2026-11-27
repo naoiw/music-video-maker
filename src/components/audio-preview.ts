@@ -1,3 +1,4 @@
+import { reportError } from "./diagnostics";
 import { getSelectedAudio } from "./audio-source";
 import { getFilterChain } from "./audio-filters";
 import { renderAudioPreview } from "../services/audio-preview";
@@ -121,7 +122,10 @@ export function initializeAudioPreview(available: boolean): () => void {
       player.src = url;
       player.load();
     } catch (error) {
-      if (current === generation) status.textContent = `試聴の準備に失敗: ${String(error)}`;
+      if (current === generation) {
+        const message = reportError("preview", error);
+        invalidate(message);
+      }
     } finally {
       busy = false;
       updateControls();
@@ -129,7 +133,10 @@ export function initializeAudioPreview(available: boolean): () => void {
   }
 
   player.addEventListener("error", () => {
-    if (player.hasAttribute("src")) status.textContent = "試聴データの再生に失敗しました。";
+    if (player.hasAttribute("src")) {
+      const message = reportError("preview", player.error?.message || "試聴データの再生に失敗しました。");
+      invalidate(message);
+    }
   });
   original.addEventListener("click", () => { void play("original"); });
   processed.addEventListener("click", () => { void play("processed"); });

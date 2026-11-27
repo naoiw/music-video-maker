@@ -1,3 +1,4 @@
+use crate::errors;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -43,15 +44,14 @@ impl Tool {
             .command()
             .args(args)
             .output()
-            .map_err(|error| format!("{}: {error}", self.name()))?;
+            .map_err(|error| errors::tool_start_error(self.name(), &error))?;
         if output.status.success() {
             Ok(output)
         } else {
-            Err(format!(
-                "{} exited with {}: {}",
+            Err(errors::process_error(
                 self.name(),
                 output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
+                &output.stderr,
             ))
         }
     }

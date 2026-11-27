@@ -72,3 +72,15 @@ summary { cursor: pointer; }
 .audio-preview audio { width: 100%; }
 .audio-preview .preview-controls { justify-content: flex-start; margin: 0; }
 .audio-preview button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+
+/* Native file drop feedback (the entire desktop window accepts files). */
+.panel[data-drop-active="true"] { outline: 2px dashed currentColor; outline-offset: -5px; }
+
+.preset-controls { display: grid; gap: 6px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.preset-controls label { font-size: 12px; }
+.preset-controls input, .preset-controls select { width: 100%; min-width: 0; }
+.preset-controls .actions { margin-top: 0; }
+
+#diagnostics { margin-top: 12px; }
+#diagnostic-list section { margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+#diagnostic-list pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; margin: 6px 0 0; user-select: text; }

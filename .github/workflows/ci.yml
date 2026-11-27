@@ -36,6 +36,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build frontend and typecheck
         run: npm run build
+      - name: Frontend tests
+        run: npm test
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -67,11 +69,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ffprobe -version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path src-tauri/Cargo.toml video::tests::encodes_ -- --ignored --test-threads=1
+          # All FFmpeg-dependent tests are marked #[ignore] so the unit suite works without FFmpeg.
+          # Run every ignored test here rather than depending on test-name prefixes.
+          cargo test --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path src-tauri/Cargo.toml audio_filters::tests::processes_ -- --ignored
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path src-tauri/Cargo.toml audio_preview::tests::renders_ -- --ignored
       - name: Build desktop executable
         run: npm run desktop:build
       - name: Upload executable for smoke testing

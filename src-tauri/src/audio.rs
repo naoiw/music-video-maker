@@ -1,4 +1,4 @@
-use crate::ffmpeg::Tool;
+use crate::{errors, ffmpeg::Tool};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -90,6 +90,10 @@ fn parse_info(name: String, bytes: &[u8]) -> Result<AudioInfo, String> {
 }
 
 pub(crate) fn probe_audio(path: &str) -> Result<AudioInfo, String> {
+    probe_audio_inner(path).map_err(|error| errors::tagged("INPUT_AUDIO", error))
+}
+
+fn probe_audio_inner(path: &str) -> Result<AudioInfo, String> {
     let input = Path::new(path);
     if !input.is_absolute()
         || !input
@@ -101,7 +105,7 @@ pub(crate) fn probe_audio(path: &str) -> Result<AudioInfo, String> {
     }
     let metadata = input
         .metadata()
-        .map_err(|error| format!("ファイルを開けません: {error}"))?;
+        .map_err(|error| errors::io_error("音声ファイルを開けません", &error, "INPUT_AUDIO"))?;
     if !metadata.is_file() || metadata.len() == 0 {
         return Err("空または無効なファイルです。".into());
     }
@@ -186,5 +190,24 @@ mod tests {
         assert!(probe_audio("song.mp3").is_err());
         let path = std::env::temp_dir().join("song.wav");
         assert!(probe_audio(path.to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn rejects_missing_empty_and_directory_mp3_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.mp3");
+        let empty = dir.path().join("empty.mp3");
+        let folder = dir.path().join("folder.mp3");
+        std::fs::write(&empty, []).unwrap();
+        std::fs::create_dir(&folder).unwrap();
+        for (path, code) in [
+            (missing, "[MVM:PATH_MISSING]"),
+            (empty, "[MVM:INPUT_AUDIO]"),
+            (folder, "[MVM:INPUT_AUDIO]"),
+        ] {
+            assert!(probe_audio(path.to_str().unwrap())
+                .unwrap_err()
+                .starts_with(code));
+        }
     }
 }
