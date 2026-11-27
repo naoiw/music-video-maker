@@ -8,7 +8,7 @@ Music Video Maker は、MP3 と画像から YouTube 投稿などに使える MP4
 
 1. [リポジトリ](https://github.com/naoiw/music-video-maker) の Code → Download ZIP からソースを取得し、「すべて展開」する（git clone でも可）。
 2. `setup.bat` をダブルクリックし、不足するツールの導入を行う。初回はネット接続・インストーラーの操作が必要。
-3. セットアップ完了後、必要に応じて Windows を再起動し、[環境構築とビルド](setup.md) の pnpm 導入・ビルド手順に従う。リポジトリルートで `pnpm install --frozen-lockfile` が成功してから `build.bat --pnpm --skip-install` を実行する。
+3. セットアップ完了後、必要に応じて Windows を再起動し、`build.bat` をダブルクリックする。pnpm と固定 lockfile を使用してビルドする。
 4. `src-tauri/target/release/music-video-maker.exe` をダブルクリックする。以降は GUI で操作する。ソース更新時には再ビルドする。
 
 詳しい手動コマンドと必要環境は [環境構築とビルド](setup.md) を参照。FFmpeg/FFprobe は利用者がインストールしたものを使用する。

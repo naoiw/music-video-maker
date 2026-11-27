@@ -18,7 +18,7 @@ ffprobe -version
 cargo test --locked --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
 ```
 
-コミット済みの pnpm-lock.yaml と src-tauri/Cargo.lock を使用する。Vite のビルド後に Rust テストを行う。現行 CI は npm でフロントエンドを検証し、Cargo の --locked を強制していない。CI の pnpm 統一と lockfile の強制使用は別途対応する。
+コミット済みの pnpm-lock.yaml と src-tauri/Cargo.lock を使用する。Vite のビルド後に Rust テストを行う。CI も package.json の固定 pnpm と --frozen-lockfile、Cargo の --locked を使用し、終了時に両 lockfile に変更がないことを検証する。
 
 ## CI とテスト対象
 
@@ -34,7 +34,7 @@ Windows CI ではフロントエンドの型チェック・単体テスト、Rus
 
 ## テスト素材
 
-外部楽曲や画像、配布制約のあるサンプルは使用しない。FFmpeg の lavfi でサイン波やノイズを合成し、Rust image クレートで単色画像・GIF等を生成する。JSONのメタデータもテスト内で生成する。破損素材は短い任意のバイト列で作る。各テストは専用の一時ディレクトリで動作し、終了後に破棄する。素材ファイルをリポジトリに保存する必要はない。FFmpeg 自体の配布条件は #24 で別途確認する。
+外部楽曲や画像、配布制約のあるサンプルは使用しない。FFmpeg の lavfi でサイン波やノイズを合成し、Rust image クレートで単色画像・GIF等を生成する。JSONのメタデータもテスト内で生成する。破損素材は短い任意のバイト列で作る。各テストは専用の一時ディレクトリで動作し、終了後に破棄する。素材ファイルをリポジトリに保存する必要はない。
 
 ## Windows 実機確認（自動テストの対象外）
 
@@ -49,4 +49,4 @@ Windows CI ではフロントエンドの型チェック・単体テスト、Rus
 
 ## ローカルビルドと総合検証
 
-現行 CI は FFmpeg の固定 ZIP を上流から SHA-256 照合してテスト用に取得し、結合テストを実行する。setup.ps1 の構文を確認し、build.bat --no-pause --skip-install で exe を生成する。exe や FFmpeg は Artifact として公開しない。クリーン Windows での環境構築・手動操作は [総合検証](mvp-validation.md) で確認する。
+CI は FFmpeg の固定 ZIP を上流から SHA-256 照合してテスト用に取得し、結合テストを実行する。setup.ps1 の構文を確認し、build.bat --no-pause で exe を生成する。exe や FFmpeg は Artifact として公開しない。クリーン Windows での環境構築・手動操作は [総合検証](mvp-validation.md) で確認する。

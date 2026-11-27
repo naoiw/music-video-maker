@@ -5,16 +5,9 @@
 ## バッチで準備（pnpm を標準とする）
 
 1. リポジトリを clone、または GitHub の Code → Download ZIP から取得し、すべて展開する。
-2. `setup.bat` をダブルクリックする。Node.js 26、Microsoft C++ Build Tools（C++によるデスクトップ開発・Windows SDK）、rustup と Rust stable x64 MSVC、FFmpeg/FFprobe、WebView2 Runtime を確認し、不足分を導入する。WinGet（Microsoft Store の App Installer）が必要。インストール・UAC・利用規約の確認が出たら内容を確認する。
+2. `setup.bat` をダブルクリックする。Node.js 26、pnpm（package.json の固定版）、Microsoft C++ Build Tools（C++によるデスクトップ開発・Windows SDK）、rustup と Rust stable x64 MSVC、FFmpeg/FFprobe、WebView2 Runtime を確認し、不足分を導入する。WinGet（Microsoft Store の App Installer）が必要。インストール・UAC・利用規約の確認が出たら内容を確認する。
 3. 成功表示を確認し、必要なら Windows を再起動する。PATH が反映されない場合も再起動して再実行する。
-4. pnpm が未導入なら PowerShell で `npm install --global pnpm@10` を実行する。既に lockfile に対応する pnpm を利用している場合はそのまま使用する。次のコマンドで依存関係を固定してリリースビルドする。成功すると exe の絶対パスを表示する。
-
-   ```powershell
-   pnpm install --frozen-lockfile
-   if ($LASTEXITCODE -ne 0) { throw 'pnpm install failed' }
-   .\build.bat --pnpm --skip-install
-   ```
-
+4. `build.bat` をダブルクリックする。pnpm install --frozen-lockfile で依存関係を導入し、Tauri をリリースビルドする。成功すると exe の絶対パスを表示する。
 5. `src-tauri/target/release/music-video-maker.exe` を起動する。以降はソースを更新しない限り再ビルド不要。FFmpeg/FFprobe は引き続き PATH 上に必要。
 
 既存の Node.js が26系でない場合は自動で置き換えず停止する。Node.js 未導入時は確認済み26系（26.7.0）を指定する。Rust の既定 toolchain は変更せず、stable-x86_64-pc-windows-msvc を使用する。C++ Build Tools が入っていても必要なコンポーネントが不足する場合は Visual Studio Installer で追加する。既存の FFmpeg はバージョン・必要機能を確認して利用する。
@@ -39,18 +32,18 @@ PowerShellを開き直し、必要なら再起動する。
 rustup toolchain install stable-x86_64-pc-windows-msvc
 node -v
 npm -v
-# pnpm が未導入の場合のみ
-npm install --global pnpm@10
+# pnpm が未導入の場合のみ（package.json の固定版）
+npm install --global pnpm@10.34.6
 pnpm --version
 rustup run stable-x86_64-pc-windows-msvc cargo -V
 ffmpeg -version
 ffprobe -version
 pnpm install --frozen-lockfile
 if ($LASTEXITCODE -ne 0) { throw 'pnpm install failed' }
-.\build.bat --pnpm --skip-install
+.\build.bat --skip-install
 ```
 
-現行の setup.bat は pnpm を自動導入しない。build.bat は引数なしでは npm を使用し、`--pnpm` で pnpm に切り替える。`--skip-install` は事前に固定 lockfile で依存関係を導入した場合に使用する。Tauri の beforeDevCommand / beforeBuildCommand は現状 npm run を使用するため、Node.js 付属の npm も残す。CI の pnpm 統一・バッチの標準動作の変更は別途対応する。
+setup.bat は pnpm がない場合のみ Node.js 付属の npm で package.json の固定版を導入する。既存 pnpm は固定版を選択して使用し、異なる版を勝手にグローバル更新しない。build.bat は pnpm のみを使用する。`--skip-install` は事前に固定 lockfile で依存関係を導入した場合のオプション。通常は引数なしで実行すればよい。Tauri の開発・ビルドと CI も pnpm に統一し、Cargo は --locked を使用する。
 
 参照: [Tauri 事前準備](https://v2.tauri.app/ja/start/prerequisites/)、[Microsoft C++ Build Tools](https://visualstudio.microsoft.com/ja/visual-cpp-build-tools/)、[WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)、[FFmpeg](ffmpeg.md)。
 

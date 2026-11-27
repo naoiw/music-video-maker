@@ -2,6 +2,8 @@ $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath (Join-Path $PSScriptRoot '..')
 $nodeMajor = (Get-Content .node-version -Raw).Trim()
 $toolchain = 'stable-x86_64-pc-windows-msvc'
+$packageManager = (Get-Content package.json -Raw | ConvertFrom-Json).packageManager
+$pnpmVersion = $packageManager -replace '^pnpm@', ''
 
 function Refresh-Path {
     $env:Path = @(
@@ -10,6 +12,7 @@ function Refresh-Path {
         $env:Path
         (Join-Path $env:USERPROFILE '.cargo\bin')
         (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links')
+        (Join-Path $env:APPDATA 'npm')
     ) -join ';'
 }
 
@@ -73,6 +76,23 @@ try {
     if ($LASTEXITCODE -ne 0 -or $actual -ne $nodeMajor) {
         throw "Node.js $nodeMajor is required. Existing Node.js is not automatically replaced. Select the required version and rerun."
     }
+    if ($packageManager -notmatch '^pnpm@\d+\.\d+\.\d+$') {
+        throw 'package.json must specify an exact pnpm version.'
+    }
+    $pnpm = Get-Command pnpm.cmd, pnpm.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $pnpm) {
+        Write-Host "Installing $packageManager ..."
+        # npm is used only to bootstrap pnpm, never to install project dependencies.
+        Invoke-Checked 'npm.cmd' @('install', '--global', $packageManager)
+        Refresh-Path
+        $pnpm = Get-Command pnpm.cmd, pnpm.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    }
+    if (-not $pnpm) { throw 'pnpm not found on PATH. Open a new terminal or restart Windows and rerun setup.' }
+    $actualPnpm = & $pnpm.Source --version
+    if ($LASTEXITCODE -ne 0 -or $actualPnpm -ne $pnpmVersion) {
+        throw "pnpm $pnpmVersion is required. Select the pinned version or install it with npm install --global $packageManager, then rerun setup."
+    }
+    Write-Host "pnpm $actualPnpm"
     if (-not (Has-CppTools)) {
         Install-Package 'Microsoft.VisualStudio.2022.BuildTools' @('--override', '--passive --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended')
         if (-not (Has-CppTools)) {

@@ -26,27 +26,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
+      - uses: pnpm/action-setup@v4
       - name: Install frontend dependencies
-        run: |
-          if (Test-Path package-lock.json) {
-            npm ci --no-audit --no-fund
-          } else {
-            npm install --no-audit --no-fund
-          }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        run: pnpm install --frozen-lockfile
       - name: Build frontend and typecheck
-        run: npm run build
+        run: pnpm run build
       - name: Frontend tests
-        run: npm test
+        run: pnpm test
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Resolve Cargo dependencies
-        run: |
-          if (-not (Test-Path src-tauri/Cargo.lock)) {
-            cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+      - name: Verify Cargo lockfile
+        run: cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 | Out-Null
       - name: Restore Rust build cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -55,9 +46,9 @@ jobs:
       - name: Rust format
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - name: Rust lint
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Verify FFmpeg integration
         run: |
           # Test-only FFmpeg; fetched from upstream and never uploaded.
@@ -79,7 +70,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # All FFmpeg-dependent tests are marked #[ignore] so the unit suite works without FFmpeg.
           # Run every ignored test here rather than depending on test-name prefixes.
-          cargo test --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
+          cargo test --locked --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check setup script syntax
         run: |
@@ -88,4 +79,6 @@ jobs:
           if ($errors.Count -gt 0) { $errors | Out-String | Write-Error }
       - name: Build desktop executable using user batch
         shell: cmd
-        run: build.bat --no-pause --skip-install
+        run: build.bat --no-pause
+      - name: Verify dependency lockfiles unchanged
+        run: git diff --exit-code -- pnpm-lock.yaml src-tauri/Cargo.lock

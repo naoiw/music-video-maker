@@ -4,9 +4,9 @@
 
 | 項目 | 確認内容 | 状態 |
 | --- | --- | --- |
-| CI | フロントエンド/Rust、FFmpeg 全結合テスト、build.bat で exe 生成 | 新方式の CI 未確認 |
+| CI | 固定 pnpm / Cargo lockfile、フロントエンド/Rust、FFmpeg 全結合テスト、build.bat で exe 生成 | pnpm 統一後の CI 未確認 |
 | 初回環境構築 | Windows 10/11 x64 で setup.bat、pnpm 導入、PATH、再起動、既存環境での再実行 | 未確認 |
-| ビルド | pnpm install --frozen-lockfile、build.bat --pnpm --skip-install で exe 生成、失敗時の案内、パスに空白・日本語 | 未確認 |
+| ビルド | build.bat で固定 lockfile を使用して exe 生成、失敗時の案内、パスに空白・日本語 | 未確認 |
 | GUI | exe 起動、MP3＋PNG/JPEG/GIF、同時ドロップ、プレビュー | 未確認 |
 | 出力 | 横長/正方形/縦長、3画像配置、GIF静止・ループ、出力尺 | 未確認 |
 | 実楽曲 | Suno等の楽曲、加工なし/あり、7フィルタ・試聴・聴感 | 未確認 |
@@ -15,4 +15,4 @@
 | YouTube | 権利を確認した動画の限定公開等で処理・再生 | 未確認 |
 | main | ユーザー確認後に統合、必要なら v0.1.0 ソース版タグ | 未実施 |
 
-過去の [PR #68 のCI](https://github.com/naoiw/music-video-maker/actions/runs/46022740269) は成功したが、新方式のセットアップ・ビルドは別途確認する。実楽曲や個人情報はコミットしない。確認したコミット、Windows、Node/Rust/FFmpeg/WebView2 のバージョン、操作結果・エラーコードを記録する。既知の制限は [ユーザーガイド](user-guide.md) を参照。未確認を合格とせず、main へのマージはユーザー承認後に行う。
+[PR #72 のCI](https://github.com/naoiw/music-video-maker/actions/runs/46025777620) は成功したが、pnpm 統一後の CI と実機セットアップ・ビルドは別途確認する。実楽曲や個人情報はコミットしない。確認したコミット、Windows、Node/Rust/FFmpeg/WebView2 のバージョン、操作結果・エラーコードを記録する。既知の制限は [ユーザーガイド](user-guide.md) を参照。未確認を合格とせず、main へのマージはユーザー承認後に行う。
