@@ -48,3 +48,7 @@ Music Video Maker/
 - Windows 10/11 x64 の開発ツール・FFmpeg 未導入環境（WebView2 導入済みおよび未導入）で、ZIP展開・GUI起動・MP3とPNG/JPEG/GIF読み込み・フィルタあり/なしのMP4生成・FFprobe検証を行う。
 - 署名・SmartScreen・WebView2 の扱いを実機で確認する。
 - 審査と実機確認が完了するまで #24 は閉じない。タグによる自動配布は #25 で扱う。
+
+## 自動配布（#25）
+
+リリース時は上記の審査済み3入力を HTTPS 取得先（binaryArchive.url、sourceArchiveUrl、noticesUrl）と SHA-256 で固定し、CI が取得・検証してからパッケージを生成する。ローカル生成時は引き続きファイルを直接指定できる。詳細は [リリース手順](release.md) を参照。
