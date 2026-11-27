@@ -51,3 +51,11 @@ test("bounds only the variable-delay expression and rejects invalid delay lists"
   assert.throws(()=>gifTimelineFilter([...Array(4096).fill(20),30]),/4096/);
   for(const delays of [[],[0],[1],[2.5],[65536],[NaN]])assert.throws(()=>gifTimelineFilter(delays),/GIF/);
 });
+
+test("supports output frame rates without changing source timing",()=>{
+  for(const fps of [24,30,60]){
+    assert.equal(gifTimelineFilter([10,30],true,fps),"settb=1/100,setpts='floor(N/2)*40+if(lt(mod(N,2),1),0,10)',fps="+fps);
+    assert.equal(gifTimelineFilter([10,30],false,fps),"settb=1/100,setpts='floor(N/2)*40+if(lt(mod(N,2),1),0,10)'");
+  }
+  assert.throws(()=>gifTimelineFilter([20],true,25));
+});

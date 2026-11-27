@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { imageKind, assertInputs, encodeArgs, LIMITS } from "../web/src/encode-plan.ts";
+import { imageKind, assertInputs, encodeArgs, LIMITS, browserOutputDefaults, browserResolutions, validateOutputOptions } from "../web/src/encode-plan.ts";
 
 test("recognizes supported signatures and rejects other data",()=>{
   assert.equal(imageKind(Uint8Array.from([137,80,78,71,13,10,26,10])),"png");
@@ -48,4 +48,25 @@ test("uses fixed local names, codecs and bounded single-thread command",()=>{
   assert.throws(()=>encodeArgs("http","1280x720","contain"));
   assert.throws(()=>encodeArgs("png","bad","contain"));
   assert.throws(()=>encodeArgs("png","1280x720","bad"));
+});
+
+test("browser output options share desktop choices and retain safe 720p defaults",()=>{
+  assert.deepEqual(browserResolutions,["1280x720","1920x1080","1080x1080","1080x1920"]);
+  assert.deepEqual(browserOutputDefaults,{resolution:"1280x720",fps:30,fit:"blurred",crf:20});
+  for(const r of browserResolutions)for(const f of ["blurred","contain","cover"])for(const fps of [24,30,60])for(const crf of [16,20,24]){
+    for(const kind of ["png","jpeg","gif"]){
+      const args=encodeArgs(kind,r,f,kind==="gif"?[10,30]:[],fps,crf);
+      assert.equal(args[args.indexOf("-r")+1],String(fps));
+      assert.equal(args[args.indexOf("-crf")+1],String(crf));
+      const vf=args[args.indexOf("-vf")+1];
+      if(kind==="gif")assert.ok(vf.endsWith(",fps="+fps));
+      else{
+        assert.equal(args[args.indexOf("-framerate")+1],String(fps));
+        assert.ok(vf.endsWith("setpts=N/("+fps+"*TB)"));
+      }
+    }
+  }
+  for(const [r,f,fps,crf] of [["1920x1080","bad",30,20],["1281x720","blurred",30,20],["1280x720","cover",25,20],["1280x720","contain",30,10],["1280x720","blurred",NaN,20],["1280x720","blurred",30,Infinity]]){
+    assert.throws(()=>validateOutputOptions(r,f,fps,crf));
+  }
 });

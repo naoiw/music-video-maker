@@ -1,9 +1,24 @@
 import { gifTimelineFilter } from "./gif-loop.ts";
+import { settingsFields } from "../../src/services/settings-schema.ts";
 
 export const LIMITS = { audioBytes: 50 * 1024 * 1024, imageBytes: 32 * 1024 * 1024, pixels: 40_000_000, seconds: 300 } as const;
 export type ImageKind = "png" | "jpeg" | "gif";
-export type Fit = "blurred" | "contain" | "cover";
-export type Resolution = "1280x720" | "1920x1080";
+export const browserResolutions = ["1280x720", ...settingsFields.resolution.options] as const;
+export type Fit = (typeof settingsFields.fit.options)[number];
+export type Resolution = (typeof browserResolutions)[number];
+export const browserOutputDefaults = {
+  resolution: "1280x720",
+  fps: Number(settingsFields.fps.initial),
+  fit: settingsFields.fit.initial,
+  crf: Number(settingsFields.quality.initial),
+} as const;
+
+export function validateOutputOptions(resolution: string, fit: string, fps: number, crf: number): void {
+  if (!browserResolutions.some(value => value === resolution)) throw new Error("非対応の出力解像度です。");
+  if (!settingsFields.fit.options.some(value => value === fit)) throw new Error("非対応の画像配置です。");
+  if (!settingsFields.fps.options.some(value => Number(value) === fps)) throw new Error("非対応のフレームレートです。");
+  if (!settingsFields.quality.options.some(value => Number(value) === crf)) throw new Error("非対応の映像品質です。");
+}
 
 export function imageKind(bytes: Uint8Array): ImageKind {
   if ([137,80,78,71,13,10,26,10].every((n,i) => bytes[i] === n)) return "png";
@@ -29,10 +44,9 @@ function blurredLayout(w: number, h: number): string {
     + "[back][front]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1";
 }
 
-export function encodeArgs(kind: ImageKind, resolution: Resolution, fit: Fit, gifDelays: readonly number[] = []): string[] {
+export function encodeArgs(kind: ImageKind, resolution: Resolution, fit: Fit, gifDelays: readonly number[] = [], fps = browserOutputDefaults.fps, crf = browserOutputDefaults.crf): string[] {
   if (!["png","jpeg","gif"].includes(kind)) throw new Error("Invalid image format");
-  if (resolution !== "1280x720" && resolution !== "1920x1080") throw new Error("Invalid resolution");
-  if (fit !== "blurred" && fit !== "contain" && fit !== "cover") throw new Error("Invalid image fit");
+  validateOutputOptions(resolution, fit, fps, crf);
   const [w,h] = resolution.split("x");
   const image = "image." + kind;
   const layout = fit === "blurred" ? blurredLayout(Number(w), Number(h)) : fit === "contain"
@@ -40,19 +54,19 @@ export function encodeArgs(kind: ImageKind, resolution: Resolution, fit: Fit, gi
     : "scale=" + w + ":" + h + ":force_original_aspect_ratio=increase:force_divisible_by=2,crop=" + w + ":" + h + ",setsar=1";
   const visual = kind === "gif"
     ? ["-ignore_loop","0","-f","gif"]
-    : ["-framerate","30","-f","image2"];
+    : ["-framerate",String(fps),"-f","image2"];
   // Decode and resize a still once, then loop only the converted output frame.
   // GIF must retain its original sequence and timing; never use the still-frame loop.
   const vf = kind === "gif"
     ? fit === "blurred"
-      // Correct PTS before framesync (overlay); only resample to 30fps after composition.
-      ? gifTimelineFilter(gifDelays, false) + "," + layout + ",fps=30"
-      : layout + "," + gifTimelineFilter(gifDelays)
-    : layout + ",format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(30*TB)";
+      // Correct PTS before framesync (overlay); resample only after composition.
+      ? gifTimelineFilter(gifDelays, false, fps) + "," + layout + ",fps=" + fps
+      : layout + "," + gifTimelineFilter(gifDelays, true, fps)
+    : layout + ",format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(" + fps + "*TB)";
   return ["-protocol_whitelist","file,pipe", ...visual,"-i",image,
     "-protocol_whitelist","file,pipe","-f","mp3","-i","audio.mp3",
-    "-map","0:v:0","-map","1:a:0","-vf",vf,"-r","30","-c:v","libx264",
-    "-threads","1","-preset","ultrafast","-crf","20","-maxrate","6M","-bufsize","12M",
+    "-map","0:v:0","-map","1:a:0","-vf",vf,"-r",String(fps),"-c:v","libx264",
+    "-threads","1","-preset","ultrafast","-crf",String(crf),"-maxrate","6M","-bufsize","12M",
     "-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",
     "-t",String(LIMITS.seconds),"-shortest","output.mp4"];
 }

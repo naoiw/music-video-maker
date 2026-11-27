@@ -8,7 +8,9 @@ import { cpus, totalmem } from "node:os";
 const benchmark = process.argv.includes("--benchmark");
 const cases = benchmark
   ? [{ext:"png",seconds:180,width:1920,height:1080,fit:"contain"},{ext:"jpg",seconds:295,width:1920,height:1080,fit:"contain"},{ext:"png",seconds:180,width:1920,height:1080,fit:"blurred"}]
-  : [...["png","jpg","gif","variable.gif"].flatMap(ext=>["blurred","contain","cover"].map(fit=>({ext,seconds:1.5,width:1280,height:720,fit}))),{ext:"variable.gif",seconds:12,width:1920,height:1080,fit:"blurred"}];
+  : [...["png","jpg","gif","variable.gif"].flatMap(ext=>["blurred","contain","cover"].map(fit=>({ext,seconds:1.5,width:1280,height:720,fit}))),{ext:"variable.gif",seconds:12,width:1920,height:1080,fit:"blurred"},
+    {ext:"png",seconds:1.5,width:1080,height:1080,fit:"blurred",fps:24,crf:24},
+    {ext:"variable.gif",seconds:1.5,width:1080,height:1920,fit:"blurred",fps:60,crf:16}];
 const results = [];
 const tmp = await mkdtemp(join(tmpdir(),"mvm-web-smoke-"));
 const base = "http://127.0.0.1:4173/music-video-maker/";
@@ -59,7 +61,11 @@ try {
   async function evaluate(expression){const res=await call("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true});if(res.exceptionDetails)throw Error(res.exceptionDetails.text);return res.result.value;}
   await call("Page.enable");await call("DOM.enable");await call("Page.navigate",{url:base});
   await wait(async()=>await evaluate("!!document.querySelector('#encode') && document.readyState==='complete'"));
-  if(await evaluate("document.querySelector('#fit').value")!=="blurred")throw Error("Unexpected default image fit");
+  const outputValues=()=>evaluate("['resolution','fps','fit','quality'].map(id=>document.getElementById(id).value)");
+  const defaults=["1280x720","30","blurred","20"];
+  if(JSON.stringify(await outputValues())!==JSON.stringify(defaults))throw Error("Unexpected default output settings");
+  await evaluate("document.getElementById('resolution').value='1080x1920';document.getElementById('fps').value='60';document.getElementById('fit').value='cover';document.getElementById('quality').value='16';document.getElementById('settings-reset').click()");
+  if(JSON.stringify(await outputValues())!==JSON.stringify(defaults))throw Error("Reset did not restore defaults");
   const root=(await call("DOM.getDocument")).root.nodeId;
   const getNode=async selector=>(await call("DOM.querySelector",{nodeId:root,selector})).nodeId;
   const audio=await getNode("#audio"), visual=await getNode("#visual");
@@ -88,15 +94,17 @@ try {
     if((await stat(path)).size!==size)throw Error("Output size mismatch");
     return size;
   }
-  for(const {ext,seconds,width,height,fit} of cases){
+  for(const {ext,seconds,width,height,fit,fps=30,crf=20} of cases){
     await call("DOM.setFileInputFiles",{nodeId:audio,files:[join(tmp,"audio-"+seconds+".mp3")]});
     await call("DOM.setFileInputFiles",{nodeId:visual,files:[join(tmp,"image."+ext)]});
-    for(const [selector,value] of [["#resolution",width+"x"+height],["#fit",fit]]){
+    for(const [selector,value] of [["#resolution",width+"x"+height],["#fit",fit],["#fps",String(fps)],["#quality",String(crf)]]){
       await evaluate("(()=>{const el=document.querySelector("+JSON.stringify(selector)+");el.value="+JSON.stringify(value)+";el.dispatchEvent(new Event('change'));})()");
     }
     await wait(()=>evaluate("document.querySelector('#image-preview').naturalWidth>0"));
     const previewOk=await evaluate("document.querySelector('#visual-preview').dataset.fit==="+JSON.stringify(fit)+" && document.querySelector('#preview-background').hidden==="+JSON.stringify(fit!=="blurred")+" && !document.querySelector('#visual-preview').hidden");
     if(!previewOk)throw Error("Preview fit mismatch: "+fit);
+    const previewRatio=await evaluate("(()=>{const p=document.getElementById('visual-preview').getBoundingClientRect();return p.width/p.height;})()");
+    if(Math.abs(previewRatio-width/height)>0.02)throw Error("Preview aspect ratio mismatch: "+previewRatio+" expected "+width/height);
     await wait(()=>evaluate("!document.querySelector('#encode').disabled"));
     if(benchmark && seconds===180 && fit==="contain"){
       await evaluate("document.querySelector('#encode').click()");
@@ -117,12 +125,12 @@ try {
     const wallSeconds=(performance.now()-started)/1000;
     const status=await evaluate("document.querySelector('#status').textContent");
     if(state!=="done")throw Error(ext+": "+status+" "+await evaluate("document.querySelector('#log').textContent"));
-    const path=join(tmp,ext+"-"+fit+"-"+seconds+".mp4"),size=await saveOutput(path);
+    const path=join(tmp,ext+"-"+fit+"-"+width+"x"+height+"-"+fps+"-"+crf+"-"+seconds+".mp4"),size=await saveOutput(path);
     const info=JSON.parse(run("ffprobe",["-v","error","-show_streams","-show_format","-of","json",path]).toString());
     const v=info.streams.find(s=>s.codec_type==="video"),a=info.streams.find(s=>s.codec_type==="audio");
     const tolerance=benchmark?0.5:0.4;
     const validDuration=value=>Number.isFinite(Number(value))&&Math.abs(Number(value)-seconds)<=tolerance;
-    if(v?.codec_name!=="h264"||v.width!==width||v.height!==height||v.pix_fmt!=="yuv420p"||v.r_frame_rate!=="30/1"||a?.codec_name!=="aac"||!validDuration(info.format.duration)||!validDuration(v.duration)||!validDuration(a.duration))throw Error("Invalid "+ext+" output: "+JSON.stringify(info));
+    if(v?.codec_name!=="h264"||v.width!==width||v.height!==height||v.pix_fmt!=="yuv420p"||v.r_frame_rate!==fps+"/1"||a?.codec_name!=="aac"||!validDuration(info.format.duration)||!validDuration(v.duration)||!validDuration(a.duration))throw Error("Invalid "+ext+" output: "+JSON.stringify(info));
     if(!benchmark){
       // Inspect decoded center pixels, including frames after the first GIF cycle.
       // Static sources must retain their color through the final sample.
@@ -133,24 +141,25 @@ try {
       const crops=fit==="blurred"?["crop=2:2","crop=2:2:"+Math.floor(width/2)+":20"]:["crop=2:2"];
       const decoded=JSON.parse(run("ffprobe",["-v","error","-select_streams","v:0","-show_frames","-show_entries","frame=best_effort_timestamp_time","-of","json",path]).toString()).frames;
       const times=decoded.map(f=>Number(f.best_effort_timestamp_time));
-      if(!times.length||times.some((t,i)=>!Number.isFinite(t)||(i>0&&Math.abs(t-times[i-1]-1/30)>0.001))||Math.abs(times[0])>0.001)throw Error("Invalid decoded frame timing: "+JSON.stringify(times));
+      if(!times.length||times.some((t,i)=>!Number.isFinite(t)||(i>0&&Math.abs(t-times[i-1]-1/fps)>0.001))||Math.abs(times[0])>0.001)throw Error("Invalid decoded frame timing: "+JSON.stringify(times));
       for(const crop of crops){
       const pixels=run("ffmpeg",["-v","error","-i",path,"-vf",crop+",scale=1:1,format=rgb24","-fps_mode","passthrough","-threads","1","-f","rawvideo","-"]);
       if(pixels.length!==times.length*3)throw Error("Invalid decoded pixel count: "+crop);
       const colors=times.map((_,i)=>pixels[i*3]>180&&pixels[i*3+2]<80?"red":pixels[i*3+2]>180&&pixels[i*3]<80?"blue":"unknown");
       for(const [time,color] of samples){
         const i=times.reduce((best,t,index)=>Math.abs(t-time)<Math.abs(times[best]-time)?index:best,0);
-        if(Math.abs(times[i]-time)>0.017||colors[i]!==color){
+        if(Math.abs(times[i]-time)>0.5/fps+0.001||colors[i]!==color){
           console.error("Decoded frame timeline:",times.map((t,j)=>t.toFixed(3)+":"+colors[j]).join(" "));
           console.error("Browser FFmpeg log:",await evaluate("document.querySelector('#log').textContent"));
           throw Error("Wrong decoded color at "+time+"s: "+ext+"/"+fit+" expected "+color+"; got "+colors[i]+" at "+times[i]+"s");
         }
       }
       if(animated){
-        // Both cycles last exactly 12 frames at 30fps. Check the entire output.
-        const redFrames=ext==="variable.gif"?3:6;
+        // Fixture durations are exact frame multiples at the tested GIF rates (30/60 fps).
+        const cycleFrames=Math.round(0.4*fps);
+        const redFrames=Math.round((ext==="variable.gif"?0.1:0.2)*fps);
         for(let i=0;i<times.length;i++){
-          const expected=i%12<redFrames?"red":"blue";
+          const expected=i%cycleFrames<redFrames?"red":"blue";
           if(colors[i]!==expected){
             console.error("Decoded frame timeline:",times.map((t,j)=>t.toFixed(3)+":"+colors[j]).join(" "));
             throw Error("GIF frame timing mismatch at "+times[i]+"s: expected "+expected+"; got "+colors[i]);
@@ -159,10 +168,10 @@ try {
       }
       }
     }
-    console.log(ext+"/"+fit+": "+status+"; FFprobe passed."+(benchmark?"":" Frame samples passed."));
+    console.log(ext+"/"+fit+"/"+width+"x"+height+"/"+fps+"fps/CRF"+crf+": "+status+"; FFprobe passed."+(benchmark?"":" Frame samples passed."));
     const encodeSeconds=Number(status.match(/エンコード ([\d.]+) 秒/)?.[1]);
     if(!Number.isFinite(encodeSeconds)||encodeSeconds<=0)throw Error("Missing encode timing");
-    results.push({ext,fit,seconds,width,height,encodeSeconds,wallSeconds,outputMiB:size/1024/1024,baselineRssMiB:baseline,peakRssMiB:peak,realtimeRatio:seconds/encodeSeconds});
+    results.push({ext,fit,seconds,width,height,fps,crf,encodeSeconds,wallSeconds,outputMiB:size/1024/1024,baselineRssMiB:baseline,peakRssMiB:peak,realtimeRatio:seconds/encodeSeconds});
   }
   if(benchmark){
     const version=await call("Browser.getVersion");
