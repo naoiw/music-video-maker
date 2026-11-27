@@ -7,8 +7,8 @@ use std::path::Path;
 pub(crate) struct AudioInfo {
     name: String,
     pub(crate) duration_seconds: f64,
-    sample_rate: u32,
-    channels: u32,
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u32,
     bit_rate: Option<u64>,
 }
 
