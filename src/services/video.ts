@@ -7,7 +7,7 @@ export interface OutputSettings {
   height: number;
   fps: number;
   crf: number;
-  fit: "contain" | "cover";
+  fit: "blurred" | "contain" | "cover";
 }
 
 export interface EncodeProgress {

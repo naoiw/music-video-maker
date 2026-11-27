@@ -6,7 +6,7 @@ type Field =
 export const settingsFields = {
   resolution: { kind: "choice", initial: "1920x1080", options: ["1920x1080", "1080x1080", "1080x1920"] },
   fps: { kind: "choice", initial: "30", options: ["24", "30", "60"] },
-  fit: { kind: "choice", initial: "contain", options: ["contain", "cover"] },
+  fit: { kind: "choice", initial: "blurred", options: ["blurred", "contain", "cover"] },
   quality: { kind: "choice", initial: "20", options: ["16", "20", "24"] },
   "noise-enabled": { kind: "boolean", initial: false },
   "noise-reduction": { kind: "number", initial: 6, min: 1, max: 30, step: 1 },
