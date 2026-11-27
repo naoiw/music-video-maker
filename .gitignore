@@ -8,7 +8,6 @@ target/
 .DS_Store
 Thumbs.db
 /src-tauri/binaries/*
-!/src-tauri/binaries/.gitkeep
 /local-media/
 /output/
 
