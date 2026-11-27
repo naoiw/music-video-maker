@@ -429,7 +429,9 @@ pub(crate) fn encode_video(
     };
     // Static sources use the same precomposed PNG as their preview. Animated
     // GIFs bypass this step so both layers can retain every source frame.
-    let composed = if matches!(settings.fit, ImageFit::Blurred) && !matches!(source, VisualKind::Gif) {
+    let composed = if matches!(settings.fit, ImageFit::Blurred)
+        && !matches!(source, VisualKind::Gif)
+    {
         let canvas = visual::blurred_image(&image, settings.width, settings.height)?;
         let directory = tempfile::Builder::new()
             .prefix(".music-video-maker-image-")
@@ -585,7 +587,9 @@ mod tests {
         assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "1"]));
         assert!(args.windows(2).any(|pair| pair == ["-stream_loop", "-1"]));
         assert!(args.iter().any(|arg| arg.contains("gblur=sigma=")));
-        assert!(args.iter().any(|arg| arg.contains("overlay=(W-w)/2:(H-h)/2")));
+        assert!(args
+            .iter()
+            .any(|arg| arg.contains("overlay=(W-w)/2:(H-h)/2")));
         assert!(!args.iter().any(|arg| arg == "-pattern_type"));
         assert!(args.iter().any(|arg| arg == "-shortest"));
     }
