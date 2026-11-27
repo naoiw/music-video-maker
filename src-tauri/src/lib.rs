@@ -1,3 +1,4 @@
+mod audio;
 mod ffmpeg;
 
 use serde::Serialize;
@@ -51,9 +52,21 @@ async fn media_tool_status() -> Result<MediaToolStatus, String> {
     .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn probe_audio(path: String) -> Result<audio::AudioInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || audio::probe_audio(&path))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![runtime_info, media_tool_status])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            runtime_info,
+            media_tool_status,
+            probe_audio
+        ])
         .run(tauri::generate_context!())
         .expect("failed to run Music Video Maker");
 }
