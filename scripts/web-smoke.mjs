@@ -78,9 +78,10 @@ try {
   if(!benchmark){
     const change=async(id,value,event="change")=>evaluate("(()=>{const el=document.getElementById("+JSON.stringify(id)+");el.value="+JSON.stringify(String(value))+";el.dispatchEvent(new Event("+JSON.stringify(event)+"));})()");
     const click=id=>evaluate("document.getElementById("+JSON.stringify(id)+").click()");
-    const reload=async()=>{
+    const reload=async(expected="復元")=>{
+      await evaluate("window.__mvmBeforeReload=true");
       await call("Page.reload",{ignoreCache:true});
-      await wait(async()=>await evaluate("document.readyState==='complete' && document.getElementById('settings-status')?.textContent.includes('復元')"));
+      await wait(async()=>await evaluate("!window.__mvmBeforeReload && document.readyState==='complete' && document.getElementById('settings-status')?.textContent.includes("+JSON.stringify(expected)+")"));
     };
     await change("resolution","1080x1920");
     await change("fps","60");
@@ -115,6 +116,12 @@ try {
     if(!await evaluate("document.getElementById('preset-save').disabled&&localStorage.getItem('music-video-maker:web:presets:v1')==='broken'"))throw Error("Corrupt presets overwritten");
     await click("preset-clear");await click("preset-clear");
     await click("filters-reset");await click("settings-reset");
+    await evaluate("localStorage.setItem('music-video-maker:web:settings:v1','broken')");
+    await reload("初期設定");
+    if(JSON.stringify(await outputValues())!==JSON.stringify(defaults))throw Error("Invalid settings did not fall back to defaults");
+    if(!await evaluate("localStorage.getItem('music-video-maker:web:settings:v1')==='broken'"))throw Error("Corrupt settings overwritten on startup");
+    await click("settings-reset");
+    await reload();
     if(JSON.stringify(await outputValues())!==JSON.stringify(defaults))throw Error("Defaults not restored after persistence tests");
     console.log("Settings and presets verified: reload, disabled values, apply, duplicate, delete, two-step clear, corrupt recovery.");
   }
