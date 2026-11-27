@@ -41,6 +41,9 @@ test("uses fixed local names, codecs and bounded single-thread command",()=>{
       assert.ok(vf.includes("scale="+w/4+":"+h/4+",gblur=sigma="+Math.min(w,h)*.02/4));
       assert.ok(vf.includes("[fg]scale="+w+":"+Math.floor(h*4/5)));
       assert.ok(vf.includes("overlay=(W-w)/2:(H-h)/2:shortest=1"));
+      assert.equal(vf.split("out_color_matrix=bt709:out_range=tv,format=yuv420p").length-1,2);
+      assert.equal(args[args.indexOf("-colorspace")+1],"bt709");
+      assert.equal(args[args.indexOf("-color_range")+1],"tv");
       if(k!=="gif") assert.ok(vf.indexOf("overlay=")<vf.indexOf("loop=loop=-1"));
     } else assert.ok(vf.includes(f==="contain"?"pad=":"crop="));
   }

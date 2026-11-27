@@ -131,6 +131,7 @@ try {
     const tolerance=benchmark?0.5:0.4;
     const validDuration=value=>Number.isFinite(Number(value))&&Math.abs(Number(value)-seconds)<=tolerance;
     if(v?.codec_name!=="h264"||v.width!==width||v.height!==height||v.pix_fmt!=="yuv420p"||v.r_frame_rate!==fps+"/1"||a?.codec_name!=="aac"||!validDuration(info.format.duration)||!validDuration(v.duration)||!validDuration(a.duration))throw Error("Invalid "+ext+" output: "+JSON.stringify(info));
+    if(fit==="blurred" && (v.color_space!=="bt709"||v.color_range!=="tv"))throw Error("Unexpected blurred output color metadata: "+JSON.stringify(v));
     if(!benchmark){
       // Inspect decoded center pixels, including frames after the first GIF cycle.
       // Static sources must retain their color through the final sample.
@@ -138,20 +139,32 @@ try {
       const samples=animated?[]:[[0.1,ext==="png"?"red":"blue"],[1.3,ext==="png"?"red":"blue"]];
       // Decode once in presentation order. Pair every RGB sample with its actual PTS.
       // Avoid demuxer seek/keyframe differences obscuring the output timing.
-      const crops=fit==="blurred"?["crop=2:2","crop=2:2:"+Math.floor(width/2)+":20"]:["crop=2:2"];
+      const crops=fit==="blurred"?["crop=16:16","crop=16:16:"+(Math.floor(width/2)-8)+":20"]:["crop=16:16"];
       const decoded=JSON.parse(run("ffprobe",["-v","error","-select_streams","v:0","-show_frames","-show_entries","frame=best_effort_timestamp_time","-of","json",path]).toString()).frames;
       const times=decoded.map(f=>Number(f.best_effort_timestamp_time));
       if(!times.length||times.some((t,i)=>!Number.isFinite(t)||(i>0&&Math.abs(t-times[i-1]-1/fps)>0.001))||Math.abs(times[0])>0.001)throw Error("Invalid decoded frame timing: "+JSON.stringify(times));
       for(const crop of crops){
-      const pixels=run("ffmpeg",["-v","error","-i",path,"-vf",crop+",scale=1:1,format=rgb24","-fps_mode","passthrough","-threads","1","-f","rawvideo","-"]);
-      if(pixels.length!==times.length*3)throw Error("Invalid decoded pixel count: "+crop);
-      const colors=times.map((_,i)=>pixels[i*3]>180&&pixels[i*3+2]<80?"red":pixels[i*3+2]>180&&pixels[i*3]<80?"blue":"unknown");
+      // Decode a solid 16x16 patch directly: no second resize to 1x1,
+      // which introduces a version-dependent swscale conversion.
+      const pixels=run("ffmpeg",["-v","error","-i",path,"-vf",crop+",format=rgb24","-fps_mode","passthrough","-threads","1","-f","rawvideo","-"]);
+      const patchSize=16*16*3;
+      if(pixels.length!==times.length*patchSize)throw Error("Invalid decoded pixel count: "+crop);
+      const stats=times.map((_,i)=>{
+        const min=[255,255,255],max=[0,0,0];
+        for(let j=i*patchSize;j<(i+1)*patchSize;j+=3)for(let c=0;c<3;c++){
+          min[c]=Math.min(min[c],pixels[j+c]);max[c]=Math.max(max[c],pixels[j+c]);
+        }
+        return {min,max};
+      });
+      // Keep the original channel thresholds and apply them to every pixel.
+      const colors=stats.map(({min,max})=>min[0]>180&&max[2]<80?"red":min[2]>180&&max[0]<80?"blue":"unknown");
+      const diagnostic=i=>JSON.stringify({crop,time:times[i],rgb:stats[i],colorSpace:v.color_space,colorRange:v.color_range});
       for(const [time,color] of samples){
         const i=times.reduce((best,t,index)=>Math.abs(t-time)<Math.abs(times[best]-time)?index:best,0);
         if(Math.abs(times[i]-time)>0.5/fps+0.001||colors[i]!==color){
           console.error("Decoded frame timeline:",times.map((t,j)=>t.toFixed(3)+":"+colors[j]).join(" "));
           console.error("Browser FFmpeg log:",await evaluate("document.querySelector('#log').textContent"));
-          throw Error("Wrong decoded color at "+time+"s: "+ext+"/"+fit+" expected "+color+"; got "+colors[i]+" at "+times[i]+"s");
+          throw Error("Wrong decoded color at "+time+"s: "+ext+"/"+fit+" expected "+color+"; got "+colors[i]+" "+diagnostic(i));
         }
       }
       if(animated){
@@ -162,7 +175,8 @@ try {
           const expected=i%cycleFrames<redFrames?"red":"blue";
           if(colors[i]!==expected){
             console.error("Decoded frame timeline:",times.map((t,j)=>t.toFixed(3)+":"+colors[j]).join(" "));
-            throw Error("GIF frame timing mismatch at "+times[i]+"s: expected "+expected+"; got "+colors[i]);
+            console.error("Browser FFmpeg log:",await evaluate("document.querySelector('#log').textContent"));
+            throw Error("GIF frame color/timing mismatch: expected "+expected+"; got "+colors[i]+" "+diagnostic(i));
           }
         }
       }

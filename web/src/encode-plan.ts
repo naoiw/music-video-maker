@@ -39,8 +39,8 @@ function blurredLayout(w: number, h: number): string {
   const sigma = Math.min(w,h) * 0.02 / 4;
   return "format=gbrap,premultiply=inplace=1,format=rgb24,split=2[bg][fg];"
     + "[bg]crop=w='max(1,min(iw,ih*" + w + "/" + h + "))':h='max(1,min(ih,iw*" + h + "/" + w + "))':exact=1,"
-    + "scale=" + w/4 + ":" + h/4 + ",gblur=sigma=" + sigma + ",scale=" + w + ":" + h + ",setsar=1[back];"
-    + "[fg]scale=" + w + ":" + Math.floor(h*4/5) + ":force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[front];"
+    + "scale=" + w/4 + ":" + h/4 + ",gblur=sigma=" + sigma + ",scale=" + w + ":" + h + ":out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1[back];"
+    + "[fg]scale=" + w + ":" + Math.floor(h*4/5) + ":force_original_aspect_ratio=decrease:force_divisible_by=2:out_color_matrix=bt709:out_range=tv,format=yuv420p,setsar=1[front];"
     + "[back][front]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1";
 }
 
@@ -67,6 +67,6 @@ export function encodeArgs(kind: ImageKind, resolution: Resolution, fit: Fit, gi
     "-protocol_whitelist","file,pipe","-f","mp3","-i","audio.mp3",
     "-map","0:v:0","-map","1:a:0","-vf",vf,"-r",String(fps),"-c:v","libx264",
     "-threads","1","-preset","ultrafast","-crf",String(crf),"-maxrate","6M","-bufsize","12M",
-    "-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",
+    "-pix_fmt","yuv420p", ...(fit === "blurred" ? ["-colorspace","bt709","-color_range","tv"] : []), "-c:a","aac","-b:a","192k","-movflags","+faststart",
     "-t",String(LIMITS.seconds),"-shortest","output.mp4"];
 }
