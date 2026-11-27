@@ -6,7 +6,7 @@ use std::sync::Mutex;
 static ENCODE_LOCK: Mutex<()> = Mutex::new(());
 
 const VIDEO_FILTER: &str = concat!(
-    "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2,",
+    "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,",
     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"
 );
 
@@ -88,6 +88,8 @@ fn encoder_args<'a>(
         "20",
         "-pix_fmt",
         "yuv420p",
+        "-color_range",
+        "tv",
         "-r",
         "30",
         "-c:a",
@@ -277,9 +279,7 @@ mod tests {
         for extension in ["png", "jpg"] {
             let cover = dir.path().join(format!("cover %d.{extension}"));
             let output = dir.path().join(format!("result {extension}.mp4"));
-            image::DynamicImage::new_rgb8(513, 777)
-                .save(&cover)
-                .unwrap();
+            image::DynamicImage::new_rgb8(513, 777).save(&cover).unwrap();
             let info = encode_static_video(
                 audio.to_str().unwrap(),
                 cover.to_str().unwrap(),
