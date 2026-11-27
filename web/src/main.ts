@@ -1,5 +1,6 @@
 import "./styles.css";
 import workerSource from "./encoder-worker.js?raw";
+import { initializeAudioPreview } from "./audio-preview";
 import { prepareLoopingGif } from "./gif-loop";
 import { activeFilterNames, compileWebAudioFilters } from "./audio-filter-plan";
 import { initializeWebAudioFilters } from "./audio-filter-panel";
@@ -35,7 +36,8 @@ let worker: Worker | null = null;
 let imageURL = "";
 let outputURL = "";
 let lines: string[] = [];
-const filters = initializeWebAudioFilters(clearOutput);
+const filters = initializeWebAudioFilters(() => { clearOutput(); audioPreview.invalidate("フィルタ設定を変更しました。再試聴できます。"); });
+const audioPreview = initializeAudioPreview({file:()=>audio.files?.[0],values:filters.values,metadataDuration});
 
 function setStatus(message: string, state = "busy") {
   status.textContent = message;
@@ -46,6 +48,7 @@ function refresh() {
   cancel.disabled = !busy;
   for (const el of [audio,visual,resolution,fit,fps,quality,settingsReset]) el.disabled = busy;
   filters.setBusy(busy);
+  audioPreview.setExportBusy(busy);
 }
 function clearOutput() {
   output.pause(); output.removeAttribute("src"); output.load(); output.hidden = true;
@@ -108,7 +111,7 @@ settingsReset.addEventListener("click", () => { clearOutput(); resetOutputSettin
 for (const [control,expected] of [[resolution,browserResolutions],[fit,settingsFields.fit.options],[fps,settingsFields.fps.options],[quality,settingsFields.quality.options]] as const) {
   if (Array.from(control.options, option => option.value).join(",") !== expected.join(",")) throw new Error("Output options do not match shared settings: " + control.id);
 }
-audio.addEventListener("change", () => { clearOutput(); refresh(); });
+audio.addEventListener("change", () => { clearOutput(); audioPreview.refreshSource(); refresh(); });
 visual.addEventListener("change", () => {
   clearOutput();
   if (imageURL) URL.revokeObjectURL(imageURL);
@@ -124,7 +127,7 @@ encode.addEventListener("click", async () => {
   const a = audio.files?.[0], v = visual.files?.[0];
   if (busy || !a || !v) return;
   const job = ++sequence;
-  clearOutput(); busy = true; refresh(); progress.value = 0; lines = []; log.textContent = "";
+  clearOutput(); audioPreview.invalidate("動画生成のため試聴を停止しました。"); busy = true; refresh(); progress.value = 0; lines = []; log.textContent = "";
   setStatus("素材を検証中…");
   try {
     if (!/\.mp3$/i.test(a.name) || a.size <= 0 || a.size > LIMITS.audioBytes || v.size <= 0 || v.size > LIMITS.imageBytes)
@@ -175,6 +178,6 @@ encode.addEventListener("click", async () => {
     if (job === sequence) fail(error instanceof Error ? error.message : String(error));
   }
 });
-window.addEventListener("pagehide", () => { stop(); if (imageURL) URL.revokeObjectURL(imageURL); if (outputURL) URL.revokeObjectURL(outputURL); });
+window.addEventListener("pagehide", () => { audioPreview.invalidate("試聴を停止しました。"); stop(); if (imageURL) URL.revokeObjectURL(imageURL); if (outputURL) URL.revokeObjectURL(outputURL); });
 resetOutputSettings();
 refresh();

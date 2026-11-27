@@ -155,4 +155,4 @@ Windows CI の FFmpeg 9.1 で、フィルタ付き動画の映像と音声の尺
 
 ## ブラウザ版（#29）
 
-Windows版のフィルタ設定と順序を再利用する。ブラウザ専用コンパイラは共通 settings-schema / preset-schema のUI範囲を検証し、実サンプルレートをWASM FFprobeから取得する。有効時はWindows版と同様に加工WAVを経由して実測尺を使用する。全無効時は従来経路。加工音の試聴・プリセット・保存は未実装。詳しくは [ブラウザ版](browser-preview.md)。WASMの動作はCIで確認する。
+Windows版のフィルタ設定と順序を再利用する。ブラウザ専用コンパイラは共通 settings-schema / preset-schema のUI範囲を検証し、実サンプルレートをWASM FFprobeから取得する。有効時はWindows版と同様に加工WAVを経由して実測尺を使用する。全無効時は従来経路。原音・加工音の最大30秒試聴をブラウザにも追加。プリセット・保存は未実装。詳しくは [ブラウザ版](browser-preview.md)。WASMの動作はCIで確認する。

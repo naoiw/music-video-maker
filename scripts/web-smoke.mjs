@@ -25,7 +25,7 @@ async function wait(fn, ms=30000) {
   throw new Error("Timed out: "+(last??"condition false"));
 }
 try {
-  for(const seconds of new Set(cases.map(c=>c.seconds))){
+  for(const seconds of new Set([...cases.map(c=>c.seconds),...(benchmark?[]:[35])])){
     const source = benchmark ? "aevalsrc=0.20*sin(2*PI*220*t)+0.10*sin(2*PI*440*t)+0.06*sin(2*PI*659*t)|0.20*sin(2*PI*220*t)+0.10*sin(2*PI*442*t)+0.06*sin(2*PI*659*t):s=44100:d="+seconds : "sine=frequency=440:duration="+seconds;
     run("ffmpeg",["-y","-f","lavfi","-i",source,"-c:a","libmp3lame","-b:a","192k",join(tmp,"audio-"+seconds+".mp3")]);
   }
@@ -87,14 +87,15 @@ try {
     do{size=pids.size;for(const [pid,ppid] of rows)if(pids.has(ppid))pids.add(pid);}while(size!==pids.size);
     return rows.filter(([pid])=>pids.has(pid)).reduce((sum,[,,rss])=>sum+rss,0)/1024;
   }
-  async function saveOutput(path){
+  async function saveOutput(path,selector="#download",attribute="href"){
     // Read bounded slices instead of one large CDP/base64 message.
-    const size=await evaluate("(async()=> (await(await fetch(document.querySelector('#download').href)).blob()).size)()");
+    const source="document.querySelector("+JSON.stringify(selector)+")["+JSON.stringify(attribute)+"]";
+    const size=await evaluate("(async()=> (await(await fetch("+source+")).blob()).size)()");
     if(!Number.isSafeInteger(size)||size<=0||size>300*1024*1024)throw Error("Unexpected output size: "+size);
     await writeFile(path,Buffer.alloc(0));
     for(let offset=0;offset<size;offset+=512*1024){
       const end=Math.min(size,offset+512*1024);
-      const expr="(async()=>{const response=await fetch(document.querySelector('#download').href,{headers:{Range:'bytes="+offset+"-"+(end-1)+"'}});if(response.status!==206)throw Error('Blob range not supported');const b=await response.blob();return await new Promise((r,j)=>{const f=new FileReader();f.onload=()=>r(f.result);f.onerror=j;f.readAsDataURL(b);});})()";
+      const expr="(async()=>{const response=await fetch("+source+",{headers:{Range:'bytes="+offset+"-"+(end-1)+"'}});if(response.status!==206)throw Error('Blob range not supported');const b=await response.blob();return await new Promise((r,j)=>{const f=new FileReader();f.onload=()=>r(f.result);f.onerror=j;f.readAsDataURL(b);});})()";
       const data=await evaluate(expr);
       const chunk=Buffer.from(data.split(",")[1],"base64");
       if(chunk.length!==end-offset)throw Error("Output chunk size mismatch");
@@ -110,6 +111,54 @@ try {
     let sum=0;
     for(let i=0;i<samples.length;i+=4){const x=samples.readFloatLE(i);sum+=x*x;}
     return Math.sqrt(sum/(samples.length/4));
+  }
+  if(!benchmark){
+    await call("DOM.setFileInputFiles",{nodeId:audio,files:[join(tmp,"audio-35.mp3")]});
+    await wait(()=>evaluate("!document.getElementById('preview-original').disabled"));
+    const setStart=async value=>evaluate("(()=>{const el=document.getElementById('preview-start');el.value="+JSON.stringify(String(value))+";el.dispatchEvent(new Event('input'));})()");
+    const ready=async()=>{
+      const state=await wait(async()=>{
+        const s=await evaluate("document.getElementById('audio-preview-status').dataset.state");
+        return ["ready","error"].includes(s)&&s;
+      },120000);
+      if(state!=="ready")throw Error("Audio preview failed: "+await evaluate("document.getElementById('audio-preview-status').textContent"));
+      await evaluate("document.getElementById('audio-preview').pause()");
+    };
+    const durationOf=path=>Number(JSON.parse(run("ffprobe",["-v","error","-show_entries","format=duration","-of","json",path]).toString()).format.duration);
+    await evaluate("document.getElementById('gain-enabled').click();document.getElementById('volume-gain').value='-6';document.getElementById('volume-gain').dispatchEvent(new Event('input'))");
+    await setStart(2);
+    await evaluate("document.getElementById('preview-original').click()");
+    await ready();
+    const orig=join(tmp,"preview-original.wav"),processed=join(tmp,"preview-processed.wav");
+    await saveOutput(orig,"#audio-preview","src");
+    const originalURL=await evaluate("document.getElementById('audio-preview').src");
+    await evaluate("document.getElementById('audio-preview').currentTime=4");
+    await wait(()=>evaluate("!document.getElementById('audio-preview').seeking"));
+    await evaluate("document.getElementById('preview-processed').click()");
+    await ready();
+    await saveOutput(processed,"#audio-preview","src");
+    const ratio=audioRms(processed,1,20)/audioRms(orig,1,20);
+    if(Math.abs(durationOf(orig)-30)>0.05||Math.abs(durationOf(processed)-30)>0.05||
+       !Number.isFinite(ratio)||Math.abs(20*Math.log10(ratio)+6)>0.1)
+      throw Error("Preview duration or gain mismatch: "+ratio);
+    const position=await evaluate("document.getElementById('audio-preview').currentTime");
+    if(Math.abs(position-4)>0.7)throw Error("Preview switch position mismatch: "+position);
+    await evaluate("document.getElementById('preview-original').click()");
+    await ready();
+    if(await evaluate("document.getElementById('audio-preview').src")!==originalURL)throw Error("Preview cache not reused");
+    await setStart(34);
+    if(await evaluate("document.getElementById('audio-preview').hasAttribute('src')"))throw Error("Old preview not cleared");
+    await evaluate("document.getElementById('preview-original').click()");
+    await ready();
+    const tail=join(tmp,"preview-tail.wav");
+    await saveOutput(tail,"#audio-preview","src");
+    if(Math.abs(durationOf(tail)-1)>0.05)throw Error("Incorrect tail preview length");
+    await evaluate("document.getElementById('volume-gain').value='-3';document.getElementById('volume-gain').dispatchEvent(new Event('input'))");
+    if(await evaluate("document.getElementById('audio-preview').hasAttribute('src')"))throw Error("Filter change did not clear preview");
+    await evaluate("document.getElementById('preview-processed').click();document.getElementById('preview-cancel').click()");
+    if(await evaluate("!document.getElementById('preview-cancel').disabled||document.getElementById('preview-processed').disabled"))throw Error("Preview cancel did not restore controls");
+    await evaluate("document.getElementById('filters-reset').click()");
+    console.log("Audio preview verified: 30s original/processed, -6dB RMS, position, cache, tail, invalidation, cancel.");
   }
   for(const {ext,seconds,width,height,fit,fps=30,crf=20,filters="none"} of cases){
     await call("DOM.setFileInputFiles",{nodeId:audio,files:[join(tmp,"audio-"+seconds+".mp3")]});
