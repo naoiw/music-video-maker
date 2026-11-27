@@ -1,4 +1,5 @@
 import "./styles.css";
+import { reportError } from "./components/diagnostics";
 import { initializeAudioSource } from "./components/audio-source";
 import { initializeAudioFilters } from "./components/audio-filters";
 import { initializeAudioPreview } from "./components/audio-preview";
@@ -49,15 +50,15 @@ async function initialize(): Promise<void> {
     // Failure to register native drag/drop must not disable the existing dialogs.
     await initializeSourceDrop(loadAudio, loadVisual).catch(error => {
       const dropStatus = document.querySelector<HTMLElement>("#source-drop-status");
-      if (dropStatus) dropStatus.textContent = `ドラッグ＆ドロップを利用できません: ${String(error)}`;
+      if (dropStatus) dropStatus.textContent = reportError("drop", error);
     });
     media.textContent = [
-      `FFmpeg: ${result.ffmpeg.version ?? result.ffmpeg.error ?? "未検出"}`,
-      `FFprobe: ${result.ffprobe.version ?? result.ffprobe.error ?? "未検出"}`,
+      `FFmpeg: ${result.ffmpeg.version ?? reportError("runtime", result.ffmpeg.error ?? "FFmpeg未検出")}`,
+      `FFprobe: ${result.ffprobe.version ?? reportError("runtime", result.ffprobe.error ?? "FFprobe未検出")}`,
     ].join(" / ");
   } catch (error) {
     status.textContent = "環境確認エラー";
-    media.textContent = String(error);
+    media.textContent = reportError("runtime", error);
   }
 }
 
