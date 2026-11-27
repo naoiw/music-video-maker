@@ -75,6 +75,61 @@ try {
   if(JSON.stringify(await outputValues())!==JSON.stringify(defaults))throw Error("Unexpected default output settings");
   await evaluate("document.getElementById('resolution').value='1080x1920';document.getElementById('fps').value='60';document.getElementById('fit').value='cover';document.getElementById('quality').value='16';document.getElementById('settings-reset').click()");
   if(JSON.stringify(await outputValues())!==JSON.stringify(defaults))throw Error("Reset did not restore defaults");
+  if(!benchmark){
+    const change=async(id,value,event="change")=>evaluate("(()=>{const el=document.getElementById("+JSON.stringify(id)+");el.value="+JSON.stringify(String(value))+";el.dispatchEvent(new Event("+JSON.stringify(event)+",{bubbles:true}));})()");
+    const click=id=>evaluate("document.getElementById("+JSON.stringify(id)+").click()");
+    const reload=async(expected="復元")=>{
+      await evaluate("window.__mvmBeforeReload=true");
+      await call("Page.reload",{ignoreCache:true});
+      await wait(async()=>await evaluate("!window.__mvmBeforeReload && document.readyState==='complete' && document.getElementById('settings-status')?.textContent.includes("+JSON.stringify(expected)+")"));
+    };
+    await change("resolution","1080x1920");
+    await change("fps","60");
+    await click("gain-enabled");
+    await change("volume-gain",-6,"input");
+    await click("limiter-enabled"); // intentionally disable auto-enabled limiter
+    await click("gain-enabled"); // preserve disabled gain parameter
+    await change("preset-name","Suno test","input");
+    if(await evaluate("document.getElementById('preset-save').matches(':disabled')"))throw Error("Preset save button not enabled after naming");
+    await click("preset-save");
+    if(!await evaluate("document.getElementById('preset-status').textContent.includes('保存しました') && document.getElementById('preset-select').value==='Suno test'"))throw Error("Preset save failed: "+await evaluate("document.getElementById('preset-status').textContent"));
+    await reload();
+    if(!await evaluate("Array.from(document.getElementById('preset-select').options,o=>o.value).includes('Suno test')"))throw Error("Saved preset missing after reload");
+    if(JSON.stringify(await outputValues())!==JSON.stringify(["1080x1920","60","blurred","20"]))throw Error("Output settings did not persist");
+    if(!await evaluate("document.getElementById('volume-gain').value==='-6'&&!document.getElementById('gain-enabled').checked&&!document.getElementById('limiter-enabled').checked"))throw Error("Disabled filter setting not restored");
+    await click("filters-reset");
+    await change("preset-select","Suno test");
+    if(await evaluate("document.getElementById('preset-load').matches(':disabled')"))throw Error("Preset apply button not enabled after selecting");
+    await click("preset-load");
+    if(!await evaluate("document.getElementById('preset-status').textContent.includes('適用しました')"))throw Error("Preset apply failed: "+await evaluate("document.getElementById('preset-status').textContent"));
+    if(!await evaluate("document.getElementById('volume-gain').value==='-6'&&!document.getElementById('gain-enabled').checked&&!document.getElementById('limiter-enabled').checked"))throw Error("Preset settings not restored");
+    if(JSON.stringify(await outputValues())!==JSON.stringify(["1080x1920","60","blurred","20"]))throw Error("Preset changed output settings");
+    await change("preset-name","suno TEST","input");
+    await click("preset-save");
+    if(!await evaluate("document.getElementById('preset-status').textContent.includes('同じ名前')"))throw Error("Duplicate preset accepted");
+    await click("preset-delete");
+    await reload();
+    if(!await evaluate("document.getElementById('preset-select').options.length===1"))throw Error("Deleted preset reappeared");
+    await change("preset-name","Temporary","input");await click("preset-save");
+    await click("preset-clear");
+    if(!await evaluate("document.getElementById('preset-select').options.length===2"))throw Error("Clear did not require confirmation");
+    await click("preset-clear");
+    await reload();
+    if(!await evaluate("document.getElementById('preset-select').options.length===1"))throw Error("Clear did not persist");
+    await evaluate("localStorage.setItem('music-video-maker:web:presets:v1','broken')");
+    await reload();
+    if(!await evaluate("document.getElementById('preset-save').disabled&&localStorage.getItem('music-video-maker:web:presets:v1')==='broken'"))throw Error("Corrupt presets overwritten");
+    await click("preset-clear");await click("preset-clear");
+    await click("filters-reset");await click("settings-reset");
+    await evaluate("localStorage.setItem('music-video-maker:web:settings:v1','broken')");
+    await reload("初期設定");
+    if(JSON.stringify(await outputValues())!==JSON.stringify(defaults))throw Error("Invalid settings did not fall back to defaults");
+    if(!await evaluate("localStorage.getItem('music-video-maker:web:settings:v1')==='broken'"))throw Error("Corrupt settings overwritten on startup");
+    await click("settings-reset");
+    await reload();
+    if(JSON.stringify(await outputValues())!==JSON.stringify(defaults))throw Error("Defaults not restored after persistence tests");
+    console.log("Settings and presets verified: reload, disabled values, apply, duplicate, delete, two-step clear, corrupt recovery.");
+  }
   const root=(await call("DOM.getDocument")).root.nodeId;
   const getNode=async selector=>(await call("DOM.querySelector",{nodeId:root,selector})).nodeId;
   const audio=await getNode("#audio"), visual=await getNode("#visual");

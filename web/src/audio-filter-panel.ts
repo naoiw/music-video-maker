@@ -28,17 +28,29 @@ export function initializeWebAudioFilters(onChange: () => void) {
       control.value = String(field.initial);
     }
   }
-  function values(): FilterSettings {
+  function readValues(includeDisabled: boolean): FilterSettings {
     const result = { ...defaults };
     for (const group of filterGroups) {
       const enabled = get<HTMLInputElement>(group.enabled).checked;
       result[group.enabled] = enabled;
       for (const id of group.fields)
-        result[id] = enabled ? get<HTMLInputElement>(id).valueAsNumber : defaults[id];
+        result[id] = enabled || includeDisabled ? get<HTMLInputElement>(id).valueAsNumber : defaults[id];
     }
     const valid = validateFilterSettings(result);
     if (!valid) throw new Error("音声フィルタの設定値を確認してください。");
     return valid;
+  }
+  function values(): FilterSettings { return readValues(false); }
+  function snapshot(): FilterSettings { return readValues(true); }
+  function apply(raw: unknown, notify = true) {
+    const valid = validateFilterSettings(raw);
+    if (!valid) throw new Error("音声フィルタの設定値を確認してください。");
+    for (const group of filterGroups) {
+      get<HTMLInputElement>(group.enabled).checked = valid[group.enabled] === true;
+      for (const id of group.fields) get<HTMLInputElement>(id).value = String(valid[id]);
+    }
+    // Do not dispatch checkbox events: preserve the saved limiter choice.
+    if (notify) update(); else refresh();
   }
   function refresh() {
     for (const group of filterGroups)
@@ -81,5 +93,5 @@ export function initializeWebAudioFilters(onChange: () => void) {
     update();
   });
   refresh();
-  return { values, setBusy(busy: boolean) { root.disabled = busy; } };
+  return { values, snapshot, apply, setBusy(busy: boolean) { root.disabled = busy; } };
 }
