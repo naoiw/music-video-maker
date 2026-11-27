@@ -21,21 +21,29 @@ enum AudioFilter {
         reduction_db: f64,
         noise_floor_db: f64,
     },
-    HighPass { frequency_hz: f64 },
-    LowPass { frequency_hz: f64 },
+    HighPass {
+        frequency_hz: f64,
+    },
+    LowPass {
+        frequency_hz: f64,
+    },
     Equalizer {
         frequency_hz: f64,
         q: f64,
         gain_db: f64,
     },
-    Gain { gain_db: f64 },
+    Gain {
+        gain_db: f64,
+    },
 }
 
 fn bounded(value: f64, min: f64, max: f64, name: &str) -> Result<(), String> {
     if value.is_finite() && (min..=max).contains(&value) {
         Ok(())
     } else {
-        Err(format!("{name} は {min} ～ {max} の範囲で指定してください。"))
+        Err(format!(
+            "{name} は {min} ～ {max} の範囲で指定してください。"
+        ))
     }
 }
 
@@ -130,9 +138,7 @@ mod tests {
             gain(false, 4.0),
             FilterEntry {
                 enabled: true,
-                filter: AudioFilter::HighPass {
-                    frequency_hz: 80.0,
-                },
+                filter: AudioFilter::HighPass { frequency_hz: 80.0 },
             },
             gain(true, 6.0),
         ];
