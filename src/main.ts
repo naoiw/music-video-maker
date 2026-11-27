@@ -2,6 +2,7 @@ import "./styles.css";
 import { initializeAudioSource } from "./components/audio-source";
 import { initializeAudioFilters } from "./components/audio-filters";
 import { initializeAudioPreview } from "./components/audio-preview";
+import { initializeSettingsPersistence, restoreSettings } from "./components/settings";
 import { initializeSourceDrop } from "./components/source-drop";
 import { initializeExport } from "./components/export";
 import { initializeVisualSource } from "./components/visual-source";
@@ -21,6 +22,7 @@ async function initialize(): Promise<void> {
       media.textContent = "デスクトップ処理は利用できません。";
       return;
     }
+    const savedSettings = await restoreSettings();
     let refreshExport = (): void => {};
     const loadVisual = initializeVisualSource(() => refreshExport());
     const result = await getMediaToolStatus();
@@ -41,6 +43,7 @@ async function initialize(): Promise<void> {
       if (audioStatus) audioStatus.textContent = "FFprobeが必要です。実行環境を確認してください。";
     }
     refreshExport = initializeExport(available, refreshPreview);
+    initializeSettingsPersistence(savedSettings, refreshFilters);
     // Failure to register native drag/drop must not disable the existing dialogs.
     await initializeSourceDrop(loadAudio, loadVisual).catch(error => {
       const dropStatus = document.querySelector<HTMLElement>("#source-drop-status");

@@ -17,7 +17,8 @@
        ├─ media / probe
        ├─ audio / filter
        ├─ video / encode
-       └─ ffmpeg / process
+       ├─ ffmpeg / process
+       └─ settings / local JSON
 
 フロントエンドは Rust 固有 API の呼び出しをサービス層に集約する。ファイル参照はパス固定にせず、将来ブラウザの File/Blob を利用可能な境界を設ける。処理パラメータと UI 状態を分離する。
 
@@ -41,3 +42,7 @@
 ## 音声フィルタ処理
 
 [音声フィルタ処理基盤](audio-filters.md) に共通の型・パラメータ検証・適用順序・FFmpeg グラフ生成を定義する。試聴と動画出力はこの基盤を利用する方針とする（#17、#18）。
+
+## 設定の永続化（#20）
+
+TypeScript のバージョン付き設定スキーマで出力・フィルタ設定を検証し、Tauri IPC 経由で Rust がアプリ専用設定ディレクトリの settings.json に保存する。サイズ上限は16 KiB、書き込みは一時ファイルからの置換。素材パスは保存しない。スキーマとGUIの復元仕様は [基本 UI](ui.md) を参照。
