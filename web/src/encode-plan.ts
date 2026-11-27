@@ -30,7 +30,7 @@ export function encodeArgs(kind: ImageKind, resolution: Resolution, fit: Fit): s
     : ["-framerate","30","-f","image2"];
   // Decode and resize a still once, then loop only the converted output frame.
   // GIF must retain its original sequence and timing; never use the still-frame loop.
-  const vf = kind === "gif" ? layout : layout + ",format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(30*TB)";
+  const vf = kind === "gif" ? layout + ",fps=30" : layout + ",format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(30*TB)";
   return ["-protocol_whitelist","file,pipe", ...visual,"-i",image,
     "-protocol_whitelist","file,pipe","-f","mp3","-i","audio.mp3",
     "-map","0:v:0","-map","1:a:0","-vf",vf,"-r","30","-c:v","libx264",

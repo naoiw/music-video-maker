@@ -116,10 +116,30 @@ try {
       // Inspect decoded center pixels, including frames after the first GIF cycle.
       // Static sources must retain their color through the final sample.
       const samples=ext==="gif"?[[0.1,"red"],[0.3,"blue"],[0.5,"red"],[0.7,"blue"],[1.3,"red"]]:[[0.1,ext==="png"?"red":"blue"],[1.3,ext==="png"?"red":"blue"]];
+      // Decode once in presentation order. Pair every RGB sample with its actual PTS.
+      // Avoid demuxer seek/keyframe differences obscuring the output timing.
+      const pixels=run("ffmpeg",["-v","error","-i",path,"-vf","crop=2:2,scale=1:1,format=rgb24","-fps_mode","passthrough","-threads","1","-f","rawvideo","-"]);
+      const decoded=JSON.parse(run("ffprobe",["-v","error","-select_streams","v:0","-show_frames","-show_entries","frame=best_effort_timestamp_time","-of","json",path]).toString()).frames;
+      const times=decoded.map(f=>Number(f.best_effort_timestamp_time));
+      if(pixels.length!==times.length*3||!times.length||times.some((t,i)=>!Number.isFinite(t)||(i>0&&Math.abs(t-times[i-1]-1/30)>0.001))||Math.abs(times[0])>0.001)throw Error("Invalid decoded frame timing: "+JSON.stringify(times));
+      const colors=times.map((_,i)=>pixels[i*3]>180&&pixels[i*3+2]<80?"red":pixels[i*3+2]>180&&pixels[i*3]<80?"blue":"unknown");
       for(const [time,color] of samples){
-        const rgb=run("ffmpeg",["-v","error","-ss",String(time),"-i",path,"-frames:v","1","-vf","crop=2:2,scale=1:1,format=rgb24","-threads","1","-f","rawvideo","-"]);
-        const red=rgb[0],blue=rgb[2];
-        if(rgb.length!==3 || !(color==="red"?red>180&&blue<80:blue>180&&red<80))throw Error("Wrong decoded color at "+time+"s: "+ext+"/"+fit+" "+Array.from(rgb));
+        const i=times.reduce((best,t,index)=>Math.abs(t-time)<Math.abs(times[best]-time)?index:best,0);
+        if(Math.abs(times[i]-time)>0.017||colors[i]!==color){
+          console.error("Decoded frame timeline:",times.map((t,j)=>t.toFixed(3)+":"+colors[j]).join(" "));
+          console.error("Browser FFmpeg log:",await evaluate("document.querySelector('#log').textContent"));
+          throw Error("Wrong decoded color at "+time+"s: "+ext+"/"+fit+" expected "+color+"; got "+colors[i]+" at "+times[i]+"s");
+        }
+      }
+      if(ext==="gif"){
+        // The fixture has two 200 ms frames. Check all complete cycles, not just selected points.
+        for(let i=0;i<times.length;i++){
+          const expected=Math.floor((times[i]+0.00001)/0.2)%2===0?"red":"blue";
+          if(colors[i]!==expected){
+            console.error("Decoded frame timeline:",times.map((t,j)=>t.toFixed(3)+":"+colors[j]).join(" "));
+            throw Error("GIF frame timing mismatch at "+times[i]+"s: expected "+expected+"; got "+colors[i]);
+          }
+        }
       }
     }
     console.log(ext+"/"+fit+": "+status+"; FFprobe passed."+(benchmark?"":" Frame samples passed."));

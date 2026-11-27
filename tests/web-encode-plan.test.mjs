@@ -26,6 +26,7 @@ test("uses fixed local names, codecs and bounded single-thread command",()=>{
     if(k==="gif"){
       assert.ok(args.includes("-stream_loop")&&args.includes("-ignore_loop"));
       assert.ok(!vf.includes("loop=loop=-1"));
+      assert.ok(vf.endsWith(",fps=30"));
     } else {
       assert.ok(!args.includes("-loop")&&!args.includes("-stream_loop"));
       assert.ok(vf.endsWith(",format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(30*TB)"));
