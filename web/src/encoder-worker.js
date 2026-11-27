@@ -13,9 +13,18 @@ async function verified(name, expected, mime, maxBytes) {
   return URL.createObjectURL(new Blob([data], {type:mime}));
 }
 function probe(core, file, format, entries) {
-  const result = core.ffprobe("-v","error","-protocol_whitelist","file,pipe","-f",format,
-    "-show_entries",entries,"-of","json","-o","probe.json",file);
-  core.reset();
+  // core 0.12.10's ffprobe() wrapper returns Module.ret, initially -1.
+  // Its C entry point returns normally instead of setting Module.ret via
+  // exit_program(). Read the actual C return value, not the wrapper sentinel.
+  // See upstream v12.15 src/bind/ffmpeg/bind.js and src/fftools/ffprobe.c.
+  const argv=["./ffprobe","-v","error","-protocol_whitelist","file,pipe","-f",format,
+    "-show_entries",entries,"-of","json","-o","probe.json",file];
+  let result;
+  try {
+    result=core._ffprobe(argv.length,core.stringsToPtr(argv));
+  } finally {
+    core.reset();
+  }
   if (result !== 0) throw new Error("FFprobe exit code "+result+" ("+file+")");
   const info = JSON.parse(core.FS.readFile("probe.json",{encoding:"utf8"}));
   core.FS.unlink("probe.json");
