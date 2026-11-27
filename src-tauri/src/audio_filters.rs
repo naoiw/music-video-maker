@@ -21,20 +21,14 @@ enum AudioFilter {
         reduction_db: f64,
         noise_floor_db: f64,
     },
-    HighPass {
-        frequency_hz: f64,
-    },
-    LowPass {
-        frequency_hz: f64,
-    },
+    HighPass { frequency_hz: f64 },
+    LowPass { frequency_hz: f64 },
     Equalizer {
         frequency_hz: f64,
         q: f64,
         gain_db: f64,
     },
-    Gain {
-        gain_db: f64,
-    },
+    Gain { gain_db: f64 },
 }
 
 fn bounded(value: f64, min: f64, max: f64, name: &str) -> Result<(), String> {
