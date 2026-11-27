@@ -1,6 +1,7 @@
 import { compileAudioFilters, type FilterChain } from "../services/audio-filters";
 import { getSelectedAudio } from "./audio-source";
 import { getFrequencyFilters, initializeFrequencyFilters } from "./frequency-filters";
+import { getVolumeFilters, initializeVolumeFilters } from "./volume-filters";
 
 const DEFAULT_REDUCTION = 6;
 const DEFAULT_FLOOR = -50;
@@ -27,7 +28,7 @@ function noiseChain(): FilterChain {
 }
 
 export function getFilterChain(): FilterChain {
-  return [...noiseChain(), ...getFrequencyFilters()];
+  return [...noiseChain(), ...getFrequencyFilters(), ...getVolumeFilters()];
 }
 
 export function initializeAudioFilters(available: boolean): () => void {
@@ -46,6 +47,7 @@ export function initializeAudioFilters(available: boolean): () => void {
   }
 
   const refreshFrequency = initializeFrequencyFilters(available);
+  const refreshVolume = initializeVolumeFilters(available);
   fieldset.disabled = !available;
   let revision = 0;
 
@@ -100,5 +102,6 @@ export function initializeAudioFilters(available: boolean): () => void {
   return () => {
     update();
     refreshFrequency();
+    refreshVolume();
   };
 }

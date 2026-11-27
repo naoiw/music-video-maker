@@ -5,7 +5,9 @@ export type AudioFilter =
   | { kind: "highPass"; frequencyHz: number }
   | { kind: "lowPass"; frequencyHz: number }
   | { kind: "equalizer"; frequencyHz: number; q: number; gainDb: number }
-  | { kind: "gain"; gainDb: number };
+  | { kind: "gain"; gainDb: number }
+  | { kind: "loudness"; targetLufs: number; truePeakDb: number }
+  | { kind: "limiter"; ceilingDb: number };
 
 export interface FilterEntry {
   enabled: boolean;
