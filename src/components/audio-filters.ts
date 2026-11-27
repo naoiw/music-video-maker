@@ -1,5 +1,6 @@
 import { compileAudioFilters, type FilterChain } from "../services/audio-filters";
 import { getSelectedAudio } from "./audio-source";
+import { getFrequencyFilters, initializeFrequencyFilters } from "./frequency-filters";
 
 const DEFAULT_REDUCTION = 6;
 const DEFAULT_FLOOR = -50;
@@ -17,12 +18,16 @@ let noise: NoiseSettings = {
 };
 
 /** Shared settings for future preview and export. Order is the processing order. */
-export function getFilterChain(): FilterChain {
+function noiseChain(): FilterChain {
   const { enabled, reductionDb, noiseFloorDb } = noise;
   return [{
     enabled,
     filter: { kind: "noiseReduction", reductionDb, noiseFloorDb },
   }];
+}
+
+export function getFilterChain(): FilterChain {
+  return [...noiseChain(), ...getFrequencyFilters()];
 }
 
 export function initializeAudioFilters(available: boolean): () => void {
@@ -40,6 +45,7 @@ export function initializeAudioFilters(available: boolean): () => void {
     throw new Error("Missing noise reduction elements");
   }
 
+  const refreshFrequency = initializeFrequencyFilters(available);
   fieldset.disabled = !available;
   let revision = 0;
 
@@ -70,7 +76,7 @@ export function initializeAudioFilters(available: boolean): () => void {
     status!.textContent = "設定を確認しています…";
     try {
       // Noise reduction is independent of sample rate. Use a provisional rate before import.
-      await compileAudioFilters(getFilterChain(), audio?.sampleRate ?? 48_000);
+      await compileAudioFilters(noiseChain(), audio?.sampleRate ?? 48_000);
       if (current !== revision) return;
       status!.textContent = audio
         ? "設定有効（FFTノイズ除去）"
@@ -91,5 +97,8 @@ export function initializeAudioFilters(available: boolean): () => void {
     update();
   });
   update();
-  return update;
+  return () => {
+    update();
+    refreshFrequency();
+  };
 }

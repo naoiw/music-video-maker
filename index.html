@@ -38,8 +38,26 @@
           <p class="muted">強い設定では高音や残響なども失われる場合があります。</p>
           <p id="noise-status" class="muted" role="status">ノイズ除去は無効です。</p>
         </fieldset>
+        <fieldset disabled id="frequency-filters" class="filters filter-pending">
+          <h3>周波数調整</h3>
+          <label><input type="checkbox" id="highpass-enabled" /> ハイパス（低域カット）</label>
+          <fieldset disabled id="highpass-parameters" class="frequency-parameters fields">
+            <label>カットオフ (Hz)<input id="highpass-hz" type="number" min="20" max="20000" step="1" value="80" /></label>
+          </fieldset>
+          <label><input type="checkbox" id="lowpass-enabled" /> ローパス（高域カット）</label>
+          <fieldset disabled id="lowpass-parameters" class="frequency-parameters fields">
+            <label>カットオフ (Hz)<input id="lowpass-hz" type="number" min="20" max="20000" step="1" value="12000" /></label>
+          </fieldset>
+          <label><input type="checkbox" id="eq-enabled" /> パラメトリックEQ</label>
+          <fieldset disabled id="eq-parameters" class="frequency-parameters fields">
+            <label>中心周波数 (Hz)<input id="eq-hz" type="number" min="20" max="20000" step="1" value="1000" /></label>
+            <label>Q値<input id="eq-q" type="number" min="0.1" max="10" step="0.1" value="1" /></label>
+            <label>ゲイン (dB)<input id="eq-gain" type="number" min="-24" max="24" step="0.5" value="0" /></label>
+          </fieldset>
+          <button type="button" id="frequency-reset">初期値に戻す</button>
+          <p id="frequency-status" class="muted" role="status">周波数フィルタは無効です。</p>
+        </fieldset>
         <fieldset disabled class="filters filter-pending">
-          <label><input type="checkbox" /> 周波数調整</label>
           <label><input type="checkbox" /> 音量調整</label>
         </fieldset>
         <p class="muted">現在は設定の確認のみ。試聴・MP4への適用は今後対応します。</p>

@@ -178,20 +178,18 @@ mod tests {
         assert!(serde_json::from_str::<FilterEntry>(injection).is_err());
     }
 
-    fn pcm(graph: Option<&str>) -> Vec<u8> {
-        let mut args = vec![
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=1000:sample_rate=48000:duration=0.5",
-        ];
+    fn tone_pcm(frequency_hz: u32, graph: Option<&str>) -> Vec<u8> {
+        let source = format!("sine=frequency={frequency_hz}:sample_rate=48000:duration=0.5");
+        let mut args = vec!["-v", "error", "-f", "lavfi", "-i", source.as_str()];
         if let Some(graph) = graph {
             args.extend(["-af", graph]);
         }
         args.extend(["-f", "f32le", "-acodec", "pcm_f32le", "-"]);
         Tool::Ffmpeg.run(&args).unwrap().stdout
+    }
+
+    fn pcm(graph: Option<&str>) -> Vec<u8> {
+        tone_pcm(1000, graph)
     }
 
     fn rms(bytes: &[u8]) -> f64 {
@@ -291,5 +289,70 @@ mod tests {
         assert!(moderate < baseline * 0.85);
         assert!(stronger < moderate);
         assert!(low_floor > stronger);
+    }
+
+    #[test]
+    fn validates_frequency_filter_ranges() {
+        let json = r#"[
+            {"enabled":true,"filter":{"kind":"highPass","frequencyHz":80}},
+            {"enabled":true,"filter":{"kind":"lowPass","frequencyHz":12000}},
+            {"enabled":true,"filter":{"kind":"equalizer","frequencyHz":1000,"q":1,"gainDb":6}}
+        ]"#;
+        let entries: Vec<FilterEntry> = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            compile(&entries, 48_000).unwrap().unwrap(),
+            "highpass=f=80,lowpass=f=12000,equalizer=f=1000:t=q:w=1:g=6"
+        );
+        assert!(compile(&entries, 16_000).is_err());
+        for (q, gain_db) in [(0.0, 0.0), (10.1, 0.0), (1.0, 25.0), (1.0, -25.0)] {
+            let entry = FilterEntry {
+                enabled: true,
+                filter: AudioFilter::Equalizer {
+                    frequency_hz: 1000.0,
+                    q,
+                    gain_db,
+                },
+            };
+            assert!(compile(&[entry], 48_000).is_err());
+        }
+    }
+
+    fn response_db(filter: AudioFilter, frequency_hz: u32) -> f64 {
+        let entry = FilterEntry {
+            enabled: true,
+            filter,
+        };
+        let graph = compile(&[entry], 48_000).unwrap().unwrap();
+        let reference = tone_pcm(frequency_hz, None);
+        let processed = tone_pcm(frequency_hz, Some(&graph));
+        assert_eq!(reference.len(), processed.len());
+        // Discard the first 100 ms to exclude filter startup.
+        let start = 4_800 * 4;
+        20.0 * (rms(&processed[start..]) / rms(&reference[start..])).log10()
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with highpass, lowpass and equalizer"]
+    fn processes_frequency_response() {
+        let hp = || AudioFilter::HighPass {
+            frequency_hz: 1000.0,
+        };
+        let lp = || AudioFilter::LowPass {
+            frequency_hz: 1000.0,
+        };
+        let eq = || AudioFilter::Equalizer {
+            frequency_hz: 1000.0,
+            q: 1.0,
+            gain_db: 6.0,
+        };
+        assert!(response_db(hp(), 100) < -35.0);
+        assert!((response_db(hp(), 1000) + 3.0).abs() < 0.25);
+        assert!(response_db(hp(), 10_000).abs() < 0.5);
+        assert!(response_db(lp(), 100).abs() < 0.5);
+        assert!((response_db(lp(), 1000) + 3.0).abs() < 0.25);
+        assert!(response_db(lp(), 10_000) < -35.0);
+        assert!(response_db(eq(), 100).abs() < 0.5);
+        assert!((response_db(eq(), 1000) - 6.0).abs() < 0.25);
+        assert!(response_db(eq(), 10_000).abs() < 0.5);
     }
 }
