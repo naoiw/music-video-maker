@@ -37,7 +37,7 @@ try {
   const gifInfo=JSON.parse(run("ffprobe",["-v","error","-select_streams","v:0","-show_frames","-show_entries","frame=pts_time,duration_time,pkt_duration_time","-of","json",gif]).toString());
   const gifFrames=gifInfo.frames;
   if(gifFrames.length!==2 || gifFrames.some((frame,i)=>Math.abs(Number(frame.pts_time)-i*0.2)>0.001 || Math.abs(Number(frame.duration_time??frame.pkt_duration_time)-0.2)>0.001 || !Number.isFinite(Number(frame.pts_time)) || !Number.isFinite(Number(frame.duration_time??frame.pkt_duration_time))))throw Error("Invalid GIF fixture timestamps: "+JSON.stringify(gifFrames));
-  const gifPixels=run("ffmpeg",["-v","error","-i",gif,"-vf","crop=2:2,scale=1:1,format=rgb24","-threads","1","-f","rawvideo","-"]);
+  const gifPixels=run("ffmpeg",["-v","error","-i",gif,"-vf","crop=2:2,scale=1:1,format=rgb24","-fps_mode","passthrough","-threads","1","-f","rawvideo","-"]);
   if(gifPixels.length!==6||gifPixels[0]<180||gifPixels[2]>80||gifPixels[3]>80||gifPixels[5]<180)throw Error("Invalid GIF fixture colors: "+Array.from(gifPixels));
   console.log("GIF fixture verified: red at 0.0s, blue at 0.2s, each 0.2s duration.");
   server=spawn(process.execPath,["node_modules/vite/bin/vite.js","preview","--config","vite.web.config.ts","--host","127.0.0.1"],{stdio:"inherit"});
