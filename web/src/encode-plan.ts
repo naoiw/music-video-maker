@@ -1,7 +1,8 @@
 import { gifTimelineFilter } from "./gif-loop.ts";
+import { MAX_IMAGE_PIXELS, assertImageDimensions } from "./image-dimensions.ts";
 import { settingsFields } from "../../src/services/settings-schema.ts";
 
-export const LIMITS = { audioBytes: 50 * 1024 * 1024, imageBytes: 32 * 1024 * 1024, pixels: 40_000_000, seconds: 300 } as const;
+export const LIMITS = { audioBytes: 50 * 1024 * 1024, imageBytes: 32 * 1024 * 1024, pixels: MAX_IMAGE_PIXELS, seconds: 300 } as const;
 export type ImageKind = "png" | "jpeg" | "gif";
 export const browserResolutions = ["1280x720", ...settingsFields.resolution.options] as const;
 export type Fit = (typeof settingsFields.fit.options)[number];
@@ -31,7 +32,7 @@ export function assertInputs(audio: {name: string; size: number}, visual: {size:
   if (!/\.mp3$/i.test(audio.name) || audio.size <= 0 || audio.size > LIMITS.audioBytes) throw new Error("MP3は50 MiB以下にしてください。");
   if (visual.size <= 0 || visual.size > LIMITS.imageBytes) throw new Error("画像は32 MiB以下にしてください。");
   if (!Number.isFinite(duration) || duration <= 0 || duration > LIMITS.seconds) throw new Error("音声の長さは5分以下にしてください。");
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width * height > LIMITS.pixels) throw new Error("画像は4000万画素以下にしてください。");
+  assertImageDimensions(width,height);
 }
 // Match the desktop animated layout: black alpha composite, cropped background
 // blurred at quarter resolution, sharp foreground contained within 80% height.

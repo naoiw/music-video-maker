@@ -6,6 +6,7 @@ import { initializeWebPresets } from "./presets";
 import { filterIds } from "../../src/services/preset-schema";
 import type { SettingsValues } from "../../src/services/settings-schema";
 import { prepareLoopingGif } from "./gif-loop";
+import { inspectImageDimensions, assertImageDimensions } from "./image-dimensions";
 import { activeFilterNames, compileWebAudioFilters } from "./audio-filter-plan";
 import { initializeWebAudioFilters } from "./audio-filter-panel";
 import { settingsFields } from "../../src/services/settings-schema";
@@ -38,6 +39,8 @@ let busy = false;
 let sequence = 0;
 let worker: Worker | null = null;
 let imageURL = "";
+let visualRevision = 0;
+let validatedVisual: File | null = null;
 let outputURL = "";
 let lines: string[] = [];
 const store = createWebStore(() => window.localStorage);
@@ -51,7 +54,7 @@ function setStatus(message: string, state = "busy") {
   status.dataset.state = state;
 }
 function refresh() {
-  encode.disabled = busy || !audio.files?.length || !visual.files?.length;
+  encode.disabled = busy || !audio.files?.length || !validatedVisual || visual.files?.[0] !== validatedVisual;
   cancel.disabled = !busy;
   for (const el of [audio,visual,resolution,fit,fps,quality,settingsReset]) el.disabled = busy;
   filters.setBusy(busy);
@@ -151,20 +154,63 @@ for (const [control,expected] of [[resolution,browserResolutions],[fit,settingsF
   if (Array.from(control.options, option => option.value).join(",") !== expected.join(",")) throw new Error("Output options do not match shared settings: " + control.id);
 }
 audio.addEventListener("change", () => { clearOutput(); audioPreview.refreshSource(); refresh(); });
-visual.addEventListener("change", () => {
+async function refreshVisualSource() {
+  const revision = ++visualRevision;
+  validatedVisual = null;
   clearOutput();
   if (imageURL) URL.revokeObjectURL(imageURL);
   image.removeAttribute("src"); background.removeAttribute("src"); image.hidden = true; imageURL = "";
+  previewEmpty.textContent = "画像が選択されていません";
   const file = visual.files?.[0];
-  if (file && file.size > 0 && file.size <= LIMITS.imageBytes) {
-    imageURL = URL.createObjectURL(file); background.src = imageURL; image.src = imageURL; image.hidden = false;
-  }
   refreshPreview(); refresh();
+  if (!file) return;
+  previewEmpty.textContent = "画像を検証中…";
+  try {
+    if (file.size <= 0 || file.size > LIMITS.imageBytes) throw new Error("画像は32 MiB以下にしてください。");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (revision !== visualRevision) return;
+    const kind = imageKind(bytes);
+    const dimensions = inspectImageDimensions(bytes,kind);
+    // Also bound every GIF frame, not only the logical canvas, before decoding.
+    if (kind === "gif") prepareLoopingGif(bytes);
+    // Ignore the caller-provided MIME/extension. Decode only validated raster types.
+    const raster = new Blob([bytes], {type:"image/"+kind});
+    const bitmap = await createImageBitmap(raster);
+    try {
+      assertImageDimensions(bitmap.width,bitmap.height);
+      // JPEG EXIF orientation may swap width and height.
+      if (!((bitmap.width===dimensions.width && bitmap.height===dimensions.height) ||
+            (kind==="jpeg" && bitmap.width===dimensions.height && bitmap.height===dimensions.width)))
+        throw new Error("画像ヘッダーとデコード結果の寸法が一致しません。");
+    } finally { bitmap.close(); }
+    if (revision !== visualRevision) return;
+    imageURL = URL.createObjectURL(raster);
+    background.src = imageURL; image.src = imageURL; image.hidden = false;
+    validatedVisual = file;
+    setStatus("画像を読み込みました。","idle");
+  } catch (error) {
+    if (revision !== visualRevision) return;
+    const message=error instanceof Error?error.message:String(error);
+    previewEmpty.textContent=message;
+    setStatus(message,"error");
+  } finally {
+    if (revision === visualRevision) { refreshPreview(); refresh(); }
+  }
+}
+visual.addEventListener("change", () => { void refreshVisualSource(); });
+visual.addEventListener("cancel", () => {
+  // A file picker may replace the File object without a change event.
+  if (visual.files?.[0] && visual.files[0] !== validatedVisual) void refreshVisualSource();
 });
 cancel.addEventListener("click", () => { stop(); progress.value = 0; setStatus("中断しました。再実行できます。","cancelled"); });
 encode.addEventListener("click", async () => {
   const a = audio.files?.[0], v = visual.files?.[0];
   if (busy || !a || !v) return;
+  if (v !== validatedVisual) {
+    // Fail closed and revalidate instead of silently ignoring the click.
+    void refreshVisualSource();
+    return;
+  }
   const job = ++sequence;
   clearOutput(); audioPreview.invalidate("動画生成のため試聴を停止しました。"); busy = true; refresh(); progress.value = 0; lines = []; log.textContent = "";
   setStatus("素材を検証中…");
@@ -173,17 +219,19 @@ encode.addEventListener("click", async () => {
       throw new Error("MP3は50 MiB、画像は32 MiB以下にしてください。");
     const filterSettings = filters.values();
     const useFilters = activeFilterNames(filterSettings).length > 0;
-    const kind = imageKind(new Uint8Array(await v.slice(0,8).arrayBuffer()));
     const duration = await metadataDuration(a);
-    const bitmap = await createImageBitmap(v);
-    try { assertInputs(a,v,duration,bitmap.width,bitmap.height); } finally { bitmap.close(); }
     if (job !== sequence) return;
     const manifestURL = new URL(import.meta.env.BASE_URL + "core-manifest.json",location.origin);
     const response = await fetch(manifestURL,{cache:"no-store",credentials:"same-origin"});
     if (!response.ok) throw new Error("処理エンジンの検証情報がありません。web:prepareを実行してください。");
     const manifest: unknown = await response.json();
     const [audioBytes,originalVisualBytes] = await Promise.all([a.arrayBuffer(),v.arrayBuffer()]);
-    const preparedGif = kind === "gif" ? prepareLoopingGif(new Uint8Array(originalVisualBytes)) : null;
+    if (job !== sequence) return;
+    const visualData = new Uint8Array(originalVisualBytes);
+    const kind = imageKind(visualData);
+    const {width,height} = inspectImageDimensions(visualData,kind);
+    assertInputs(a,v,duration,width,height);
+    const preparedGif = kind === "gif" ? prepareLoopingGif(visualData) : null;
     const visualBytes = preparedGif?.bytes.buffer ?? originalVisualBytes;
     const args = encodeArgs(kind,resolution.value as Resolution,fit.value as Fit,preparedGif?.frameDelays,Number(fps.value),Number(quality.value));
     if (job !== sequence) return;
@@ -217,6 +265,21 @@ encode.addEventListener("click", async () => {
     if (job === sequence) fail(error instanceof Error ? error.message : String(error));
   }
 });
-window.addEventListener("pagehide", () => { audioPreview.invalidate("試聴を停止しました。"); stop(); if (imageURL) URL.revokeObjectURL(imageURL); if (outputURL) URL.revokeObjectURL(outputURL); });
+window.addEventListener("pagehide", () => {
+  visualRevision++;
+  validatedVisual = null;
+  audioPreview.invalidate("試聴を停止しました。");
+  clearOutput();
+  if (imageURL) URL.revokeObjectURL(imageURL);
+  imageURL = "";
+  image.removeAttribute("src"); background.removeAttribute("src"); image.hidden = true;
+  stop();
+});
+window.addEventListener("pageshow", event => {
+  if (event.persisted) {
+    audioPreview.refreshSource();
+    void refreshVisualSource();
+  }
+});
 restoreSettings();
 refresh();

@@ -30,6 +30,13 @@ try {
     run("ffmpeg",["-y","-f","lavfi","-i",source,"-c:a","libmp3lame","-b:a","192k",join(tmp,"audio-"+seconds+".mp3")]);
   }
   run("ffmpeg",["-y","-f","lavfi","-i",benchmark?"testsrc2=size=1920x1080:rate=1":"color=c=red:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.png")]);
+  if(!benchmark){
+    // Only a header is required: the app must reject before attempting decode.
+    const large=Buffer.alloc(33);Buffer.from([137,80,78,71,13,10,26,10]).copy(large);
+    large.writeUInt32BE(13,8);large.write("IHDR",12);large.writeUInt32BE(8001,16);large.writeUInt32BE(5000,20);
+    await writeFile(join(tmp,"oversize.png"),large);
+    await writeFile(join(tmp,"not-raster.png"),'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>');
+  }
   run("ffmpeg",["-y","-f","lavfi","-i",benchmark?"testsrc=size=1920x1080:rate=1":"color=c=blue:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.jpg")]);
   // Generate two explicit RGB frames with distinct timestamps, independent of concat
   // filter behavior across FFmpeg versions. Use a palette generated from both
@@ -159,6 +166,18 @@ try {
     if((await stat(path)).size!==size)throw Error("Output size mismatch");
     return size;
   }
+  if(!benchmark){
+    await call("DOM.setFileInputFiles",{nodeId:audio,files:[join(tmp,"audio-1.5.mp3")]});
+    for(const [name,expected] of [["oversize.png","4000万画素"],["not-raster.png","PNG・JPEG・GIF"]]){
+      await call("DOM.setFileInputFiles",{nodeId:visual,files:[join(tmp,name)]});
+      await wait(()=>evaluate("document.getElementById('status').textContent.includes("+JSON.stringify(expected)+")"));
+      if(!await evaluate("document.getElementById('encode').disabled&&!document.getElementById('image-preview').hasAttribute('src')&&!document.getElementById('preview-background').hasAttribute('src')"))
+        throw Error("Rejected image exposed to preview or export: "+name);
+    }
+    await call("DOM.setFileInputFiles",{nodeId:visual,files:[join(tmp,"image.png")]});
+    await wait(()=>evaluate("!document.getElementById('encode').disabled&&document.getElementById('image-preview').naturalWidth===64"));
+    console.log("Image preflight verified: oversized and non-raster rejected, valid image recovered.");
+  }
   let originalRms;
   function audioRms(path,start,length){
     const samples=run("ffmpeg",["-v","error","-ss",String(start),"-i",path,"-t",String(length),"-map","0:a:0","-f","f32le","-c:a","pcm_f32le","-"]);
@@ -217,6 +236,12 @@ try {
   }
   for(const {ext,seconds,width,height,fit,fps=30,crf=20,filters="none"} of cases){
     await call("DOM.setFileInputFiles",{nodeId:audio,files:[join(tmp,"audio-"+seconds+".mp3")]});
+    // Chromium's CDP can replace File objects without emitting change when
+    // re-selecting the same path. Clear the input and notify the app first,
+    // then select the fixture as a new user selection.
+    await evaluate("document.getElementById('visual').value='';document.getElementById('visual').dispatchEvent(new Event('change',{bubbles:true}))");
+    if(!await evaluate("document.getElementById('encode').disabled&&!document.getElementById('image-preview').hasAttribute('src')"))
+      throw Error("Cleared visual source retained validated state");
     await call("DOM.setFileInputFiles",{nodeId:visual,files:[join(tmp,"image."+ext)]});
     for(const [selector,value] of [["#resolution",width+"x"+height],["#fit",fit],["#fps",String(fps)],["#quality",String(crf)]]){
       await evaluate("(()=>{const el=document.querySelector("+JSON.stringify(selector)+");el.value="+JSON.stringify(value)+";el.dispatchEvent(new Event('change'));})()");
@@ -245,6 +270,8 @@ try {
     let peak=browserRssMiB(),baseline=peak;
     const started=performance.now();
     await evaluate("document.querySelector('#encode').click()");
+    const began=await evaluate("document.querySelector('#status').dataset.state");
+    if(!["busy","done","error"].includes(began))throw Error("Encode did not start: "+await evaluate("document.querySelector('#status').textContent"));
     let lastSample=0;
     const state=await wait(async()=>{
       if(benchmark && Date.now()-lastSample>=2000){lastSample=Date.now();const rss=browserRssMiB();if(rss!==null)peak=Math.max(peak??0,rss);}
