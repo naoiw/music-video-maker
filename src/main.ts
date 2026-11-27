@@ -1,6 +1,7 @@
 import "./styles.css";
 import { initializeAudioSource } from "./components/audio-source";
 import { initializeAudioFilters } from "./components/audio-filters";
+import { initializeAudioPreview } from "./components/audio-preview";
 import { initializeExport } from "./components/export";
 import { initializeVisualSource } from "./components/visual-source";
 import { getMediaToolStatus, getRuntimeInfo } from "./services/runtime";
@@ -28,9 +29,11 @@ async function initialize(): Promise<void> {
     }
     const available = Boolean(result.ffmpeg.version && result.ffprobe.version);
     const refreshFilters = initializeAudioFilters(available);
+    const refreshPreview = initializeAudioPreview(available);
     if (result.ffprobe.version) initializeAudioSource(() => {
       refreshExport();
       refreshFilters();
+      refreshPreview();
     });
     else {
       const audioStatus = document.querySelector<HTMLElement>("#audio-status");

@@ -1,5 +1,6 @@
 mod audio;
 mod audio_filters;
+mod audio_preview;
 mod encode_job;
 mod ffmpeg;
 mod video;
@@ -72,6 +73,19 @@ fn compile_audio_filters(
 }
 
 #[tauri::command]
+async fn render_audio_preview(
+    path: String,
+    start_seconds: f64,
+    filters: Vec<audio_filters::FilterEntry>,
+) -> Result<audio_preview::AudioPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        audio_preview::render(&path, start_seconds, &filters)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 async fn load_visual(path: String) -> Result<visual::VisualInfo, String> {
     tauri::async_runtime::spawn_blocking(move || visual::load_visual(&path))
         .await
@@ -120,6 +134,7 @@ pub fn run() {
             media_tool_status,
             probe_audio,
             compile_audio_filters,
+            render_audio_preview,
             load_visual,
             encode_video,
             encode_progress,
