@@ -1,4 +1,5 @@
 import "./styles.css";
+import { initializeAudioSource } from "./components/audio-source";
 import { getMediaToolStatus, getRuntimeInfo } from "./services/runtime";
 
 async function initialize(): Promise<void> {
@@ -19,6 +20,11 @@ async function initialize(): Promise<void> {
     if (!result) {
       media.textContent = "メディア処理環境を取得できません。";
       return;
+    }
+    if (result.ffprobe.version) initializeAudioSource();
+    else {
+      const audioStatus = document.querySelector<HTMLElement>("#audio-status");
+      if (audioStatus) audioStatus.textContent = "FFprobeが必要です。実行環境を確認してください。";
     }
     media.textContent = [
       `FFmpeg: ${result.ffmpeg.version ?? result.ffmpeg.error ?? "未検出"}`,
