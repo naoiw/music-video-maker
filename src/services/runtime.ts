@@ -14,3 +14,18 @@ export async function getRuntimeInfo(): Promise<RuntimeInfo> {
   const info = await invoke<NativeRuntimeInfo>("runtime_info");
   return { kind: "desktop", ...info };
 }
+
+interface ToolStatus {
+  version: string | null;
+  error: string | null;
+}
+
+export interface MediaToolStatus {
+  ffmpeg: ToolStatus;
+  ffprobe: ToolStatus;
+}
+
+export async function getMediaToolStatus(): Promise<MediaToolStatus | null> {
+  if (!isTauri()) return null;
+  return invoke<MediaToolStatus>("media_tool_status");
+}
