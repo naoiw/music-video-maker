@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; worker-src blob:; connect-src 'self' https://cdn.jsdelivr.net blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>Music Video Maker</title>
 </head>
@@ -19,7 +20,7 @@
         <input id="audio" type="file" accept=".mp3,audio/mpeg">
         <label for="visual">画像（PNG / JPEG / GIF）</label>
         <input id="visual" type="file" accept=".png,.jpg,.jpeg,.gif,image/png,image/jpeg,image/gif">
-        <p class="muted">素材はブラウザ内で処理します。処理エンジンの取得時のみ jsDelivr に接続します。初回は約32 MBのダウンロードが必要です。</p>
+        <p class="muted">素材・生成物はブラウザ内で処理します。処理エンジンの取得時は jsDelivr に接続するため、通常の通信情報が外部に渡ります。初回は約32 MBのダウンロードが必要です。</p>
       </section>
       <section class="panel" aria-labelledby="settings-title">
         <h2 id="settings-title">出力設定</h2>

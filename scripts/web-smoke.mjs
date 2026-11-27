@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { cpus, totalmem } from "node:os";
+import { createNetworkAudit, publishedUrls } from "./web-network-audit.mjs";
 const benchmark = process.argv.includes("--benchmark");
 const cases = benchmark
   ? [{ext:"png",seconds:180,width:1920,height:1080,fit:"contain"},{ext:"jpg",seconds:295,width:1920,height:1080,fit:"contain"},{ext:"png",seconds:180,width:1920,height:1080,fit:"blurred"}]
@@ -72,9 +73,15 @@ try {
   ws=new WebSocket(tabs.webSocketDebuggerUrl);
   await new Promise((resolve,reject)=>{ws.addEventListener("open",resolve,{once:true});ws.addEventListener("error",reject,{once:true});});
   const pending=new Map();let id=0;
-  ws.addEventListener("message",event=>{const m=JSON.parse(event.data);const p=pending.get(m.id);if(p){pending.delete(m.id);clearTimeout(p.timer);m.error?p.reject(Error(m.error.message)):p.resolve(m.result);}});
-  function call(method,params={}){return new Promise((resolve,reject)=>{const n=++id;const timer=setTimeout(()=>{pending.delete(n);reject(Error("CDP timeout: "+method));},120000);pending.set(n,{resolve,reject,timer});ws.send(JSON.stringify({id:n,method,params}));});}
+  const audit=createNetworkAudit({base,allowed:await publishedUrls("dist-web",base),call});
+  ws.addEventListener("message",event=>{
+    const m=JSON.parse(event.data);const p=pending.get(m.id);
+    if(p){pending.delete(m.id);clearTimeout(p.timer);m.error?p.reject(Error(m.error.message)):p.resolve(m.result);}
+    else if(m.method)audit.observe(m);
+  });
+  function call(method,params={},sessionId){return new Promise((resolve,reject)=>{const n=++id;const timer=setTimeout(()=>{pending.delete(n);reject(Error("CDP timeout: "+method));},120000);pending.set(n,{resolve,reject,timer});ws.send(JSON.stringify({id:n,method,params,...(sessionId?{sessionId}:{})}));});}
   async function evaluate(expression){const res=await call("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true});if(res.exceptionDetails)throw Error(res.exceptionDetails.text);return res.result.value;}
+  await audit.start();
   await call("Page.enable");await call("DOM.enable");await call("Page.navigate",{url:base});
   await wait(async()=>await evaluate("!!document.querySelector('#encode') && document.readyState==='complete'"));
   const outputValues=()=>evaluate("['resolution','fps','fit','quality'].map(id=>document.getElementById(id).value)");
@@ -360,6 +367,10 @@ try {
     if(!Number.isFinite(encodeSeconds)||encodeSeconds<=0)throw Error("Missing encode timing");
     results.push({ext,fit,seconds,width,height,fps,crf,encodeSeconds,wallSeconds,outputMiB:size/1024/1024,baselineRssMiB:baseline,peakRssMiB:peak,realtimeRatio:seconds/encodeSeconds});
   }
+  const network=await audit.finish();
+  const networkReport=["## Application network audit (synthetic fixtures)","","Page + dedicated Worker CDP sessions; only bodyless GET to published files, browser favicon, or the two pinned core URLs. Local Blob/data reads are not network transfers.","","| Site GET | Core GET | Manifest GET | Local reads | Workers | Workers with both core GETs | Unexpected |","| ---: | ---: | ---: | ---: | ---: | ---: | ---: |","| "+[network.siteGets,network.coreGets,network.manifestGets,network.localReads,network.workers,network.workersWithBothCoreGets,network.unexpected].join(" | ")+" |","","This checks observed requests, not all browser/OS traffic or all possible exfiltration channels. It is not a security certification."].join("\n");
+  console.log(networkReport);
+  if(process.env.GITHUB_STEP_SUMMARY)await appendFile(process.env.GITHUB_STEP_SUMMARY,networkReport+"\n");
   if(benchmark){
     const version=await call("Browser.getVersion");
     const report=["## Browser performance (synthetic fixtures)", "", "Chrome: "+version.product+"; CPU: "+cpus()[0]?.model+" ("+cpus().length+" logical); RAM: "+(totalmem()/1024**3).toFixed(1)+" GiB", "", "| Source | Fit | Duration | Resolution | Encode | End-to-end | Media/encode | Output | Peak browser RSS* |", "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |", ...results.map(x=>"| "+x.ext+" | "+x.fit+" | "+x.seconds+" s | "+x.width+"×"+x.height+" | "+x.encodeSeconds.toFixed(1)+" s | "+x.wallSeconds.toFixed(1)+" s | "+x.realtimeRatio.toFixed(2)+"x | "+x.outputMiB.toFixed(1)+" MiB | "+(x.peakRssMiB?.toFixed(0)??"n/a")+" MiB |"), "", "* Linux Chrome process-tree RSS sampled every 2 seconds; shared pages can be counted more than once. Not a precise WASM memory measurement. Synthetic fixtures are not a real-song or user-PC benchmark.", "", "Cancel and retry passed; FFprobe verified both streams and container duration."].join("\n");
