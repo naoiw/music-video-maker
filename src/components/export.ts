@@ -1,6 +1,6 @@
 import { getSelectedAudio } from "./audio-source";
 import { getSelectedVisual } from "./visual-source";
-import { encodeStaticVideo, selectOutput } from "../services/video";
+import { encodeVideo, selectOutput } from "../services/video";
 
 export function initializeExport(available: boolean): () => void {
   const audioButton = document.querySelector<HTMLButtonElement>("#select-audio");
@@ -25,12 +25,11 @@ export function initializeExport(available: boolean): () => void {
     outputButton!.disabled = !available || encoding || choosingOutput;
     startButton!.disabled = !available || encoding || choosingOutput ||
       audioButton!.disabled || visualButton!.disabled ||
-      !audio || !visual || visual.format === "GIF" || !outputPath;
+      !audio || !visual || !outputPath;
     if (encoding || choosingOutput) return;
     progress!.value = 0;
     status!.textContent = !available ? "FFmpegとFFprobeが必要です。" :
-      visual?.format === "GIF" ? "GIFの動画合成にはまだ対応していません。" :
-      !audio || !visual || !outputPath ? "音声・静止画と保存先を選択してください。" :
+      !audio || !visual || !outputPath ? "音声・画像と保存先を選択してください。" :
       "1920 × 1080 / 30 fps で生成できます。";
   }
 
@@ -67,7 +66,7 @@ export function initializeExport(available: boolean): () => void {
     let resultMessage: string;
     let succeeded = false;
     try {
-      const info = await encodeStaticVideo(audio.path, visual.path, outputPath);
+      const info = await encodeVideo(audio.path, visual.path, outputPath);
       succeeded = true;
       resultMessage = `生成完了 · ${info.durationSeconds.toFixed(1)} 秒 · ${(info.sizeBytes / 1024 / 1024).toFixed(2)} MiB`;
       // Require a new destination for the next export; never overwrite.

@@ -15,10 +15,10 @@ export async function selectOutput(defaultName: string): Promise<string | null> 
   });
 }
 
-export async function encodeStaticVideo(
+export async function encodeVideo(
   audioPath: string,
   visualPath: string,
   outputPath: string,
 ): Promise<VideoInfo> {
-  return invoke<VideoInfo>("encode_static_video", { audioPath, visualPath, outputPath });
+  return invoke<VideoInfo>("encode_video", { audioPath, visualPath, outputPath });
 }

@@ -39,13 +39,20 @@ struct OutputFormat {
     duration: String,
 }
 
+#[derive(Clone, Copy)]
+enum VisualKind {
+    Png,
+    Jpeg,
+    Gif,
+}
+
 fn encoder_args<'a>(
     audio_path: &'a str,
     visual_path: &'a str,
-    image_codec: &'a str,
+    source: VisualKind,
     temporary_path: &'a str,
 ) -> Vec<&'a str> {
-    vec![
+    let mut args = vec![
         "-hide_banner",
         "-loglevel",
         "error",
@@ -54,16 +61,29 @@ fn encoder_args<'a>(
         "-y", // Only the private temporary file can be overwritten.
         "-protocol_whitelist",
         "file",
-        "-f",
-        "image2",
-        "-pattern_type",
-        "none",
-        "-loop",
-        "1",
-        "-framerate",
-        "30",
-        "-c:v",
-        image_codec,
+    ];
+    match source {
+        VisualKind::Gif => args.extend(["-f", "gif", "-ignore_loop", "1", "-stream_loop", "-1"]),
+        VisualKind::Png | VisualKind::Jpeg => {
+            let codec = match source {
+                VisualKind::Png => "png",
+                _ => "mjpeg",
+            };
+            args.extend([
+                "-f",
+                "image2",
+                "-pattern_type",
+                "none",
+                "-loop",
+                "1",
+                "-framerate",
+                "30",
+                "-c:v",
+                codec,
+            ]);
+        }
+    }
+    args.extend([
         "-i",
         visual_path,
         "-protocol_whitelist",
@@ -102,7 +122,8 @@ fn encoder_args<'a>(
         "-f",
         "mp4",
         temporary_path,
-    ]
+    ]);
+    args
 }
 
 fn positive_duration(value: &str) -> Result<f64, String> {
@@ -163,7 +184,7 @@ fn validate_destination(path: &Path) -> Result<&Path, String> {
         .ok_or_else(|| "保存先のフォルダがありません。".to_owned())
 }
 
-pub(crate) fn encode_static_video(
+pub(crate) fn encode_video(
     audio_path: &str,
     visual_path: &str,
     output_path: &str,
@@ -177,10 +198,11 @@ pub(crate) fn encode_static_video(
     // Revalidate sources at export time; do not trust GUI metadata.
     audio::probe_audio(audio_path)?;
     let image = visual::load_visual(visual_path)?;
-    let codec = match image.format {
-        "PNG" => "png",
-        "JPEG" => "mjpeg",
-        _ => return Err("GIF の動画合成にはまだ対応していません。".into()),
+    let source = match image.format {
+        "PNG" => VisualKind::Png,
+        "JPEG" => VisualKind::Jpeg,
+        "GIF" => VisualKind::Gif,
+        _ => return Err("非対応の画像形式です。".into()),
     };
     drop(image);
 
@@ -195,7 +217,7 @@ pub(crate) fn encode_static_video(
         .to_str()
         .ok_or_else(|| "一時ファイルのパスを処理できません。".to_owned())?;
 
-    Tool::Ffmpeg.run(&encoder_args(audio_path, visual_path, codec, temp_path))?;
+    Tool::Ffmpeg.run(&encoder_args(audio_path, visual_path, source, temp_path))?;
 
     let probe = Tool::Ffprobe.run(&[
         "-v",
@@ -229,7 +251,12 @@ mod tests {
 
     #[test]
     fn arguments_keep_paths_separate_and_map_only_requested_streams() {
-        let args = encoder_args("music file.mp3", "cover %d.png", "png", "temp.mp4");
+        let args = encoder_args(
+            "music file.mp3",
+            "cover %d.png",
+            VisualKind::Png,
+            "temp.mp4",
+        );
         assert!(args.windows(2).any(|pair| pair == ["-i", "cover %d.png"]));
         assert!(args.windows(2).any(|pair| pair == ["-i", "music file.mp3"]));
         assert!(args
@@ -238,6 +265,16 @@ mod tests {
         assert!(args.windows(2).any(|pair| pair == ["-map", "1:a:0"]));
         assert!(args.contains(&"-shortest"));
         assert_eq!(args.last(), Some(&"temp.mp4"));
+    }
+
+    #[test]
+    fn gif_arguments_ignore_embedded_loop_count() {
+        let args = encoder_args("audio.mp3", "cover.gif", VisualKind::Gif, "temp.mp4");
+        assert!(args.windows(2).any(|pair| pair == ["-f", "gif"]));
+        assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "1"]));
+        assert!(args.windows(2).any(|pair| pair == ["-stream_loop", "-1"]));
+        assert!(!args.contains(&"-pattern_type"));
+        assert!(args.contains(&"-shortest"));
     }
 
     #[test]
@@ -284,7 +321,7 @@ mod tests {
             image::DynamicImage::new_rgb8(513, 777)
                 .save(&cover)
                 .unwrap();
-            let info = encode_static_video(
+            let info = encode_video(
                 audio.to_str().unwrap(),
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
@@ -293,12 +330,107 @@ mod tests {
             assert!((info.duration_seconds - 2.3).abs() < 0.2);
             assert!(info.size_bytes > 0);
             assert!(output.is_file());
-            assert!(encode_static_video(
+            assert!(encode_video(
                 audio.to_str().unwrap(),
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
             )
             .is_err());
+        }
+    }
+
+    fn sample_color(path: &Path, timestamp: &str) -> Vec<u8> {
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-ss",
+                timestamp,
+                "-i",
+                path.to_str().unwrap(),
+                "-frames:v",
+                "1",
+                "-vf",
+                "crop=2:2:960:540,format=rgb24",
+                "-f",
+                "rawvideo",
+                "-",
+            ])
+            .unwrap()
+            .stdout
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with libmp3lame, libx264, AAC and FFprobe"]
+    fn encodes_gif_with_repeated_animation() {
+        use image::codecs::gif::{GifEncoder, Repeat};
+        use image::{Delay, Frame, Rgba, RgbaImage};
+
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("music test.mp3");
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2.3",
+                "-c:a",
+                "libmp3lame",
+                audio.to_str().unwrap(),
+            ])
+            .unwrap();
+
+        for (name, repeat) in [
+            ("no-loop", None),
+            ("finite-loop", Some(Repeat::Finite(1))),
+            ("infinite-loop", Some(Repeat::Infinite)),
+        ] {
+            let cover = dir.path().join(format!("{name}.gif"));
+            let output = dir.path().join(format!("{name}.mp4"));
+            {
+                let mut encoder = GifEncoder::new(std::fs::File::create(&cover).unwrap());
+                if let Some(repeat) = repeat {
+                    encoder.set_repeat(repeat).unwrap();
+                }
+                for (color, delay) in [([255, 0, 0, 255], 200), ([0, 0, 255, 255], 300)] {
+                    encoder
+                        .encode_frame(Frame::from_parts(
+                            RgbaImage::from_pixel(64, 48, Rgba(color)),
+                            0,
+                            0,
+                            Delay::from_numer_denom_ms(delay, 1),
+                        ))
+                        .unwrap();
+                }
+            }
+
+            let info = encode_video(
+                audio.to_str().unwrap(),
+                cover.to_str().unwrap(),
+                output.to_str().unwrap(),
+            )
+            .unwrap();
+            assert!((info.duration_seconds - 2.3).abs() < 0.2);
+            assert!(info.size_bytes > 0);
+
+            // Check decoded colors during the first cycle and well after the original GIF ends.
+            for (timestamp, red) in [
+                ("0.1", true),
+                ("0.35", false),
+                ("1.6", true),
+                ("1.85", false),
+                ("2.1", true),
+            ] {
+                let pixel = sample_color(&output, timestamp);
+                assert_eq!(pixel.len(), 12);
+                if red {
+                    assert!(pixel[0] > 200 && pixel[2] < 50, "{name}: {timestamp}");
+                } else {
+                    assert!(pixel[2] > 200 && pixel[0] < 50, "{name}: {timestamp}");
+                }
+            }
         }
     }
 }

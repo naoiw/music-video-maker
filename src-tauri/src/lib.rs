@@ -69,13 +69,13 @@ async fn load_visual(path: String) -> Result<visual::VisualInfo, String> {
 }
 
 #[tauri::command]
-async fn encode_static_video(
+async fn encode_video(
     audio_path: String,
     visual_path: String,
     output_path: String,
 ) -> Result<video::VideoInfo, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        video::encode_static_video(&audio_path, &visual_path, &output_path)
+        video::encode_video(&audio_path, &visual_path, &output_path)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -89,7 +89,7 @@ pub fn run() {
             media_tool_status,
             probe_audio,
             load_visual,
-            encode_static_video
+            encode_video
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Music Video Maker");
