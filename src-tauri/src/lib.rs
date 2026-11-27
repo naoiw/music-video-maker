@@ -1,4 +1,5 @@
 mod audio;
+mod encode_job;
 mod ffmpeg;
 mod video;
 mod visual;
@@ -74,12 +75,32 @@ async fn encode_video(
     visual_path: String,
     output_path: String,
     settings: video::OutputSettings,
+    job_id: u32,
 ) -> Result<video::VideoInfo, String> {
+    let active = encode_job::ActiveJob::register(job_id)?;
     tauri::async_runtime::spawn_blocking(move || {
-        video::encode_video(&audio_path, &visual_path, &output_path, settings)
+        let result = video::encode_video(
+            &audio_path,
+            &visual_path,
+            &output_path,
+            settings,
+            active.job(),
+        );
+        active.job().check_cancelled()?;
+        result
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn encode_progress(job_id: u32) -> Option<encode_job::Progress> {
+    encode_job::progress(job_id)
+}
+
+#[tauri::command]
+fn cancel_encode(job_id: u32) -> bool {
+    encode_job::cancel(job_id)
 }
 
 pub fn run() {
@@ -90,7 +111,9 @@ pub fn run() {
             media_tool_status,
             probe_audio,
             load_visual,
-            encode_video
+            encode_video,
+            encode_progress,
+            cancel_encode
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Music Video Maker");
