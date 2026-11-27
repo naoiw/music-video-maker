@@ -19,6 +19,7 @@ Rust / Tauri / TypeScript / FFmpeg を使用する方針です。
 
 - [MVP仕様](docs/specification.md)
 - [システム構成](docs/architecture.md)
+- [音声フィルタ処理基盤](docs/audio-filters.md)
 - [開発フロー](docs/development.md)
 - [Issues](https://github.com/naoiw/music-video-maker/issues)
 
