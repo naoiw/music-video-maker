@@ -35,10 +35,8 @@ impl Default for OutputSettings {
 
 impl OutputSettings {
     fn validate(self) -> Result<(), String> {
-        if !matches!(
-            (self.width, self.height),
-            (1920, 1080) | (1080, 1080) | (1080, 1920)
-        ) {
+        let size = (self.width, self.height);
+        if ![(1920, 1080), (1080, 1080), (1080, 1920)].contains(&size) {
             return Err("非対応の出力解像度です。".into());
         }
         if !matches!(self.fps, 24 | 30 | 60) || !matches!(self.crf, 16 | 20 | 24) {
@@ -527,22 +525,18 @@ mod tests {
         assert!(cover.validate().is_ok());
         assert!(cover.filter().contains("crop=1080:1920"));
         let args = encoder_args("a.mp3", "b.png", VisualKind::Png, "c.mp4", cover);
-        assert!(args.windows(2).any(|pair| pair == ["-framerate", "60"]));
-        assert!(args.windows(2).any(|pair| pair == ["-r", "60"]));
-        assert!(args.windows(2).any(|pair| pair == ["-crf", "16"]));
-        for settings in [
-            OutputSettings {
-                width: 1,
-                ..defaults
-            },
-            OutputSettings { fps: 0, ..defaults },
-            OutputSettings {
-                crf: 99,
-                ..defaults
-            },
-        ] {
-            assert!(settings.validate().is_err());
+        for expected in [["-framerate", "60"], ["-r", "60"], ["-crf", "16"]] {
+            assert!(args.windows(2).any(|pair| pair == expected));
         }
+        let mut invalid = defaults;
+        invalid.width = 1;
+        assert!(invalid.validate().is_err());
+        invalid = defaults;
+        invalid.fps = 0;
+        assert!(invalid.validate().is_err());
+        invalid = defaults;
+        invalid.crf = 99;
+        assert!(invalid.validate().is_err());
     }
 
     #[test]
@@ -564,9 +558,8 @@ mod tests {
                 audio.to_str().unwrap(),
             ])
             .unwrap();
-        image::DynamicImage::new_rgb8(640, 640)
-            .save(&cover)
-            .unwrap();
+        let image = image::DynamicImage::new_rgb8(640, 640);
+        image.save(&cover).unwrap();
         for (name, settings) in [
             (
                 "square",
