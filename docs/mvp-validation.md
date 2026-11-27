@@ -5,8 +5,8 @@
 | 項目 | 確認内容 | 状態 |
 | --- | --- | --- |
 | CI | フロントエンド/Rust、FFmpeg 全結合テスト、build.bat で exe 生成 | 新方式の CI 未確認 |
-| 初回環境構築 | Windows 10/11 x64 で setup.bat、PATH、再起動、既存環境での再実行 | 未確認 |
-| ビルド | build.bat で依存導入・exe 生成、失敗時の案内、パスに空白・日本語 | 未確認 |
+| 初回環境構築 | Windows 10/11 x64 で setup.bat、pnpm 導入、PATH、再起動、既存環境での再実行 | 未確認 |
+| ビルド | pnpm install --frozen-lockfile、build.bat --pnpm --skip-install で exe 生成、失敗時の案内、パスに空白・日本語 | 未確認 |
 | GUI | exe 起動、MP3＋PNG/JPEG/GIF、同時ドロップ、プレビュー | 未確認 |
 | 出力 | 横長/正方形/縦長、3画像配置、GIF静止・ループ、出力尺 | 未確認 |
 | 実楽曲 | Suno等の楽曲、加工なし/あり、7フィルタ・試聴・聴感 | 未確認 |

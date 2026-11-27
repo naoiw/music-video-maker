@@ -2,23 +2,23 @@
 
 ## 実行方法
 
-Node.js は .node-version、Rust は stable、FFmpeg/FFprobe は PATH または実行ファイルと同じフォルダに配置する。FFmpeg 結合テストには libmp3lame、libx264、AAC、音声フィルタ、lavfi が必要。
+Node.js は .node-version、パッケージマネージャーは pnpm、Rust は stable、FFmpeg/FFprobe は PATH または実行ファイルと同じフォルダに配置する。FFmpeg 結合テストには libmp3lame、libx264、AAC、音声フィルタ、lavfi が必要。
 
 リポジトリルートで実行する。
 
 ```powershell
-npm install
-npm run build
-npm test
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm test
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --locked --manifest-path src-tauri/Cargo.toml
 ffmpeg -version
 ffprobe -version
-cargo test --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
+cargo test --locked --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
 ```
 
-pnpm を使用するローカル環境では npm install / npm run build / npm test を pnpm install / pnpm run build / pnpm test に置き換えられる。Vite のビルド後に Rust テストを行う。
+コミット済みの pnpm-lock.yaml と src-tauri/Cargo.lock を使用する。Vite のビルド後に Rust テストを行う。現行 CI は npm でフロントエンドを検証し、Cargo の --locked を強制していない。CI の pnpm 統一と lockfile の強制使用は別途対応する。
 
 ## CI とテスト対象
 
@@ -49,4 +49,4 @@ Windows CI ではフロントエンドの型チェック・単体テスト、Rus
 
 ## ローカルビルドと総合検証
 
-CI は FFmpeg の固定 ZIP を上流から SHA-256 照合してテスト用に取得し、結合テストを実行する。setup.ps1 の構文を確認し、build.bat --no-pause --skip-install で exe を生成する。exe や FFmpeg は Artifact として公開しない。クリーン Windows での環境構築・手動操作は [総合検証](mvp-validation.md) で確認する。
+現行 CI は FFmpeg の固定 ZIP を上流から SHA-256 照合してテスト用に取得し、結合テストを実行する。setup.ps1 の構文を確認し、build.bat --no-pause --skip-install で exe を生成する。exe や FFmpeg は Artifact として公開しない。クリーン Windows での環境構築・手動操作は [総合検証](mvp-validation.md) で確認する。
