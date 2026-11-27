@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,6 +48,8 @@ jobs:
             sudo apt-get install -y ffmpeg
           fi
       - run: pnpm web:smoke
+      - name: Benchmark long 1080p browser encodes
+        run: pnpm web:benchmark
       - run: git diff --exit-code -- pnpm-lock.yaml src-tauri/Cargo.lock
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'

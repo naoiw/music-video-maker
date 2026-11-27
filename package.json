@@ -15,7 +15,8 @@
     "web:dev": "vite --config vite.web.config.ts --host 127.0.0.1",
     "web:build": "tsc --noEmit -p web/tsconfig.json && vite build --config vite.web.config.ts && node scripts/check-web-dist.mjs",
     "web:preview": "vite preview --config vite.web.config.ts --host 127.0.0.1",
-    "web:smoke": "node scripts/web-smoke.mjs"
+    "web:smoke": "node scripts/web-smoke.mjs",
+    "web:benchmark": "node scripts/web-smoke.mjs --benchmark"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
