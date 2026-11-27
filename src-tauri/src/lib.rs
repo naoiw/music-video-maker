@@ -73,9 +73,10 @@ async fn encode_video(
     audio_path: String,
     visual_path: String,
     output_path: String,
+    settings: video::OutputSettings,
 ) -> Result<video::VideoInfo, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        video::encode_video(&audio_path, &visual_path, &output_path)
+        video::encode_video(&audio_path, &visual_path, &output_path, settings)
     })
     .await
     .map_err(|error| error.to_string())?

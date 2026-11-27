@@ -1,0 +1,47 @@
+name: Close completed issues
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [develop]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  close-issues:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Close explicitly referenced issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as event:
+              pr = json.load(event)["pull_request"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          # Only standalone closing references in this repository. No PR code is executed.
+          body = re.sub(r"<!--.*?-->", "", pr.get("body") or "", flags=re.S)
+          numbers = sorted({int(n) for n in re.findall(
+              r"(?im)^\s*(?:closes|fixes|resolves):?\s+#([1-9][0-9]*)[ \t]*$", body
+          )})
+          for number in numbers:
+              endpoint = f"repos/{repo}/issues/{number}"
+              issue = json.loads(subprocess.check_output(["gh", "api", endpoint], text=True))
+              if "pull_request" in issue:
+                  print(f"Skipping #{number}: not an issue")
+                  continue
+              if issue["state"] == "closed":
+                  continue
+              subprocess.run(["gh", "api", "--method", "PATCH", endpoint,
+                              "-f", "state=closed", "-f", "state_reason=completed"], check=True)
+              print(f"Closed #{number} via merged PR #{pr['number']}")
+          PY
