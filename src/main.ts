@@ -1,5 +1,6 @@
 import "./styles.css";
 import { initializeAudioSource } from "./components/audio-source";
+import { initializeExport } from "./components/export";
 import { initializeVisualSource } from "./components/visual-source";
 import { getMediaToolStatus, getRuntimeInfo } from "./services/runtime";
 
@@ -17,17 +18,19 @@ async function initialize(): Promise<void> {
       media.textContent = "デスクトップ処理は利用できません。";
       return;
     }
-    initializeVisualSource();
+    let refreshExport = (): void => {};
+    initializeVisualSource(() => refreshExport());
     const result = await getMediaToolStatus();
     if (!result) {
       media.textContent = "メディア処理環境を取得できません。";
       return;
     }
-    if (result.ffprobe.version) initializeAudioSource();
+    if (result.ffprobe.version) initializeAudioSource(() => refreshExport());
     else {
       const audioStatus = document.querySelector<HTMLElement>("#audio-status");
       if (audioStatus) audioStatus.textContent = "FFprobeが必要です。実行環境を確認してください。";
     }
+    refreshExport = initializeExport(Boolean(result.ffmpeg.version && result.ffprobe.version));
     media.textContent = [
       `FFmpeg: ${result.ffmpeg.version ?? result.ffmpeg.error ?? "未検出"}`,
       `FFprobe: ${result.ffprobe.version ?? result.ffprobe.error ?? "未検出"}`,

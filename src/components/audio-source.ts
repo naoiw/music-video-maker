@@ -16,7 +16,7 @@ function formatDuration(seconds: number): string {
     : `${minutes}:${rest}`;
 }
 
-export function initializeAudioSource(): void {
+export function initializeAudioSource(onChange: () => void = () => {}): void {
   const button = document.querySelector<HTMLButtonElement>("#select-audio");
   const name = document.querySelector<HTMLElement>("#audio-name");
   const details = document.querySelector<HTMLElement>("#audio-details");
@@ -28,6 +28,7 @@ export function initializeAudioSource(): void {
   button.disabled = false;
   button.addEventListener("click", async () => {
     button.disabled = true;
+    onChange();
     status.textContent = "MP3を確認しています…";
 
     try {
@@ -52,6 +53,7 @@ export function initializeAudioSource(): void {
       status.textContent = `読み込み失敗: ${String(error)}`;
     } finally {
       button.disabled = false;
+      onChange();
     }
   });
 }
