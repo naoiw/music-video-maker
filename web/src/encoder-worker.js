@@ -65,7 +65,7 @@ self.onmessage = async ({data}) => {
   self.onmessage = null; // one job per worker; terminate releases WASM and its virtual FS
   let jsURL, wasmURL;
   try {
-    const {manifest, audio, visual, kind, args, duration, useFilters} = data;
+    const {manifest, audio, visual, kind, args, duration, useFilters, previewStart} = data;
     let videoArgs=args, mediaDuration=duration, filtering=false;
     if (manifest.version !== "0.12.10") throw new Error("Unsupported engine version");
     notify("status",{message:"処理エンジンを取得・検証中…"});
@@ -85,6 +85,32 @@ self.onmessage = async ({data}) => {
     });
     core.FS.writeFile("audio.mp3",new Uint8Array(audio));
     const started = performance.now();
+    if(data.type==="preview"){
+      notify("status",{message:"音声情報を検証中…"});
+      const source=audioInfo(core,"audio.mp3","mp3");
+      if(!Number.isFinite(previewStart)||previewStart<0||previewStart>=source.duration)
+        throw new Error("試聴開始位置が無効です。");
+      const graph=useFilters?await requestGraph(source.sampleRate):null;
+      const length=Math.min(30,source.duration-previewStart);
+      notify("status",{message:"試聴データを生成中…"});
+      // Output-side seek preserves preceding filter state, matching desktop preview.
+      const result=core.exec("-protocol_whitelist","file,pipe","-f","mp3","-i","audio.mp3","-map","0:a:0","-vn","-map_metadata","-1",
+        ...(graph?["-af",graph]:[]),"-ss",previewStart.toFixed(6),"-t",length.toFixed(6),
+        "-ar",String(source.sampleRate),"-ac",String(source.channels),"-c:a","pcm_s16le","-f","wav","preview.wav");
+      core.reset();
+      if(result!==0)throw new Error("試聴データの生成に失敗しました: FFmpeg exit code "+result);
+      const size=core.FS.stat("preview.wav").size;
+      if(size<=44||size>6*1024*1024)throw new Error("試聴データのサイズが無効です。");
+      const info=audioInfo(core,"preview.wav","wav");
+      if(info.sampleRate!==source.sampleRate||info.channels!==source.channels||info.duration>30.001||
+         Math.abs(info.duration-length)>0.2)throw new Error("試聴データの形式または長さが無効です。");
+      const wav=core.FS.readFile("preview.wav");
+      if(String.fromCharCode(...wav.subarray(0,4))!=="RIFF"||String.fromCharCode(...wav.subarray(8,12))!=="WAVE")
+        throw new Error("試聴データの形式が無効です。");
+      const bytes=wav.slice().buffer;
+      self.postMessage({type:"previewDone",bytes},[bytes]);
+      return;
+    }
     if(useFilters){
       notify("status",{message:"音声情報を検証中…"});
       const source=audioInfo(core,"audio.mp3","mp3");

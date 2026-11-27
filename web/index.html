@@ -90,7 +90,7 @@
         <div class="actions"><button type="button" id="filters-reset">フィルタを初期化</button></div>
         </fieldset>
         <p id="filter-status" class="muted" role="status">音声フィルタ: なし</p>
-        <p class="muted">有効なフィルタはMP4出力に反映します。加工音の試聴は未実装です。周波数の上限は生成時に元MP3のサンプルレートで検証します。</p>
+        <p class="muted">有効なフィルタはMP4出力と加工音の試聴に反映します。周波数の上限は生成時に元MP3のサンプルレートで検証します。</p>
       </section>
     </div>
     <div class="column">
@@ -100,6 +100,18 @@
           <span id="preview-empty">画像が選択されていません</span>
           <img id="preview-background" class="gif-blurred-background" alt="" hidden>
           <img id="image-preview" class="preview-image" alt="選択画像" hidden>
+        </div>
+        <div class="audio-preview">
+          <h3>音声の試聴・比較</h3>
+          <label for="preview-start">試聴区間（最大30秒） <output id="preview-range" for="preview-start">未選択</output></label>
+          <input id="preview-start" type="range" min="0" max="0" step="1" value="0" disabled>
+          <div class="preview-controls">
+            <button disabled type="button" id="preview-original" aria-pressed="false">原音</button>
+            <button disabled type="button" id="preview-processed" aria-pressed="false">加工音</button>
+            <button disabled type="button" id="preview-cancel">中断</button>
+          </div>
+          <audio id="audio-preview" controls preload="metadata" aria-label="音声プレビュー"></audio>
+          <p id="audio-preview-status" class="muted" role="status" data-state="idle">MP3を選択してください。</p>
         </div>
       </section>
       <section class="panel column" aria-labelledby="export-title">
@@ -115,7 +127,7 @@
       </section>
     </div>
   </main>
-  <footer class="footer muted"><a href="https://github.com/naoiw/music-video-maker">GitHub</a> · <a href="https://github.com/ffmpegwasm/ffmpeg.wasm">FFmpeg.wasm</a> · <a href="https://ffmpeg.org/legal.html">FFmpeg licensing</a><p>技術検証版。加工音の試聴・プリセットは未実装。</p></footer>
+  <footer class="footer muted"><a href="https://github.com/naoiw/music-video-maker">GitHub</a> · <a href="https://github.com/ffmpegwasm/ffmpeg.wasm">FFmpeg.wasm</a> · <a href="https://ffmpeg.org/legal.html">FFmpeg licensing</a><p>技術検証版。プリセット・設定の永続化は未実装。</p></footer>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
