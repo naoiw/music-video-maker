@@ -96,6 +96,13 @@ async fn load_visual(path: String) -> Result<visual::VisualInfo, String> {
 }
 
 #[tauri::command]
+async fn render_blurred_preview(path: String, width: u32, height: u32) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || visual::blurred_preview(&path, width, height))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 async fn encode_video(
     audio_path: String,
     visual_path: String,
@@ -177,6 +184,7 @@ pub fn run() {
             compile_audio_filters,
             render_audio_preview,
             load_visual,
+            render_blurred_preview,
             encode_video,
             encode_progress,
             cancel_encode,
