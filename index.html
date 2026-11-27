@@ -30,6 +30,17 @@
       </section>
       <section class="panel" aria-labelledby="filter-title">
         <h2 id="filter-title">音声フィルタ</h2>
+        <fieldset id="preset-controls" disabled class="preset-controls">
+          <h3>フィルタプリセット</h3>
+          <label for="preset-select">保存済みプリセット</label>
+          <select id="preset-select" disabled><option value="">プリセットを選択</option></select>
+          <div class="actions"><button type="button" id="preset-load" disabled>適用</button><button type="button" id="preset-delete" disabled>削除</button></div>
+          <label for="preset-name">プリセット名</label>
+          <input id="preset-name" type="text" maxlength="40" placeholder="例：Suno ロック" disabled />
+          <div class="actions"><button type="button" id="preset-save" disabled>現在のフィルタを保存</button></div>
+          <div class="actions"><button type="button" id="preset-defaults" disabled>フィルタを初期化</button><button type="button" id="preset-clear" disabled>全削除</button></div>
+          <p id="preset-status" class="muted" role="status"></p>
+        </fieldset>
         <fieldset id="noise-filter" disabled class="filters">
           <label><input type="checkbox" id="noise-enabled" /> ノイズ除去（FFT）</label>
           <fieldset id="noise-parameters" disabled class="filter-parameters">

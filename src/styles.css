@@ -75,3 +75,8 @@ summary { cursor: pointer; }
 
 /* Native file drop feedback (the entire desktop window accepts files). */
 .panel[data-drop-active="true"] { outline: 2px dashed currentColor; outline-offset: -5px; }
+
+.preset-controls { display: grid; gap: 6px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.preset-controls label { font-size: 12px; }
+.preset-controls input, .preset-controls select { width: 100%; min-width: 0; }
+.preset-controls .actions { margin-top: 0; }

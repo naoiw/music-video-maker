@@ -2,6 +2,7 @@ import "./styles.css";
 import { initializeAudioSource } from "./components/audio-source";
 import { initializeAudioFilters } from "./components/audio-filters";
 import { initializeAudioPreview } from "./components/audio-preview";
+import { initializePresets } from "./components/presets";
 import { initializeSettingsPersistence, restoreSettings } from "./components/settings";
 import { initializeSourceDrop } from "./components/source-drop";
 import { initializeExport } from "./components/export";
@@ -43,7 +44,8 @@ async function initialize(): Promise<void> {
       if (audioStatus) audioStatus.textContent = "FFprobeが必要です。実行環境を確認してください。";
     }
     refreshExport = initializeExport(available, refreshPreview);
-    initializeSettingsPersistence(savedSettings, refreshFilters);
+    const applyFilterSettings = initializeSettingsPersistence(savedSettings, refreshFilters);
+    await initializePresets(applyFilterSettings);
     // Failure to register native drag/drop must not disable the existing dialogs.
     await initializeSourceDrop(loadAudio, loadVisual).catch(error => {
       const dropStatus = document.querySelector<HTMLElement>("#source-drop-status");
