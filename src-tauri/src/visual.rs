@@ -1,3 +1,4 @@
+use crate::errors;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use image::{ImageFormat, ImageReader};
 use serde::Serialize;
@@ -78,19 +79,24 @@ fn inspect_image(name: String, expected: ImageFormat, bytes: &[u8]) -> Result<Vi
 }
 
 pub(crate) fn load_visual(path: &str) -> Result<VisualInfo, String> {
+    load_visual_inner(path).map_err(|error| errors::tagged("INPUT_IMAGE", error))
+}
+
+fn load_visual_inner(path: &str) -> Result<VisualInfo, String> {
     let path = Path::new(path);
     let format = expected_format(path)?;
     let metadata = path
         .metadata()
-        .map_err(|error| format!("ファイルを開けません: {error}"))?;
+        .map_err(|error| errors::io_error("画像ファイルを開けません", &error, "INPUT_IMAGE"))?;
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_IMAGE_BYTES as u64 {
         return Err("通常の画像ファイル（32 MiB 以下）を選択してください。".into());
     }
-    let file = File::open(path).map_err(|error| format!("画像を開けません: {error}"))?;
+    let file = File::open(path)
+        .map_err(|error| errors::io_error("画像を開けません", &error, "INPUT_IMAGE"))?;
     let mut bytes = Vec::new();
     file.take((MAX_IMAGE_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("画像を読み込めません: {error}"))?;
+        .map_err(|error| errors::io_error("画像を読み込めません", &error, "INPUT_IMAGE"))?;
     let name = path
         .file_name()
         .ok_or_else(|| "ファイル名を取得できません。".to_owned())?

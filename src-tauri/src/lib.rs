@@ -2,6 +2,7 @@ mod audio;
 mod audio_filters;
 mod audio_preview;
 mod encode_job;
+mod errors;
 mod ffmpeg;
 mod settings;
 mod video;
@@ -71,7 +72,7 @@ fn compile_audio_filters(
     filters: Vec<audio_filters::FilterEntry>,
     sample_rate: u32,
 ) -> Result<Option<String>, String> {
-    audio_filters::compile(&filters, sample_rate)
+    audio_filters::compile(&filters, sample_rate).map_err(|error| errors::tagged("FILTER", error))
 }
 
 #[tauri::command]

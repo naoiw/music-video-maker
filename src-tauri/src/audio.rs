@@ -1,4 +1,4 @@
-use crate::ffmpeg::Tool;
+use crate::{errors, ffmpeg::Tool};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -90,6 +90,10 @@ fn parse_info(name: String, bytes: &[u8]) -> Result<AudioInfo, String> {
 }
 
 pub(crate) fn probe_audio(path: &str) -> Result<AudioInfo, String> {
+    probe_audio_inner(path).map_err(|error| errors::tagged("INPUT_AUDIO", error))
+}
+
+fn probe_audio_inner(path: &str) -> Result<AudioInfo, String> {
     let input = Path::new(path);
     if !input.is_absolute()
         || !input
@@ -101,7 +105,7 @@ pub(crate) fn probe_audio(path: &str) -> Result<AudioInfo, String> {
     }
     let metadata = input
         .metadata()
-        .map_err(|error| format!("ファイルを開けません: {error}"))?;
+        .map_err(|error| errors::io_error("音声ファイルを開けません", &error, "INPUT_AUDIO"))?;
     if !metadata.is_file() || metadata.len() == 0 {
         return Err("空または無効なファイルです。".into());
     }
