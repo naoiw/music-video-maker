@@ -22,7 +22,14 @@ test("uses fixed local names, codecs and bounded single-thread command",()=>{
     assert.ok(args.includes("libx264")&&args.includes("aac")&&args.includes("yuv420p")&&args.includes("-shortest"));
     assert.equal(args[args.indexOf("-threads")+1],"1");
     assert.equal(args[args.indexOf("-t")+1],"300");
-    assert.ok(args.includes(k==="gif"?"-stream_loop":"-loop"));
+    const vf=args[args.indexOf("-vf")+1];
+    if(k==="gif"){
+      assert.ok(args.includes("-stream_loop")&&args.includes("-ignore_loop"));
+      assert.ok(!vf.includes("loop=loop=-1"));
+    } else {
+      assert.ok(!args.includes("-loop")&&!args.includes("-stream_loop"));
+      assert.ok(vf.endsWith(",format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(30*TB)"));
+    }
     assert.ok(args[args.indexOf("-vf")+1].includes(f==="contain"?"pad=":"crop="));
   }
   assert.throws(()=>encodeArgs("http","1280x720","contain"));

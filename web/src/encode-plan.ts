@@ -22,12 +22,15 @@ export function encodeArgs(kind: ImageKind, resolution: Resolution, fit: Fit): s
   if (fit !== "contain" && fit !== "cover") throw new Error("Invalid image fit");
   const [w,h] = resolution.split("x");
   const image = "image." + kind;
-  const vf = fit === "contain"
+  const layout = fit === "contain"
     ? "scale=" + w + ":" + h + ":force_original_aspect_ratio=decrease:force_divisible_by=2,pad=" + w + ":" + h + ":(ow-iw)/2:(oh-ih)/2:black,setsar=1"
     : "scale=" + w + ":" + h + ":force_original_aspect_ratio=increase:force_divisible_by=2,crop=" + w + ":" + h + ",setsar=1";
   const visual = kind === "gif"
     ? ["-stream_loop","-1","-ignore_loop","1","-f","gif"]
-    : ["-loop","1","-framerate","30","-f","image2"];
+    : ["-framerate","30","-f","image2"];
+  // Decode and resize a still once, then loop only the converted output frame.
+  // GIF must retain its original sequence and timing; never use the still-frame loop.
+  const vf = kind === "gif" ? layout : layout + ",format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(30*TB)";
   return ["-protocol_whitelist","file,pipe", ...visual,"-i",image,
     "-protocol_whitelist","file,pipe","-f","mp3","-i","audio.mp3",
     "-map","0:v:0","-map","1:a:0","-vf",vf,"-r","30","-c:v","libx264",

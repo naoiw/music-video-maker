@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { cpus, totalmem } from "node:os";
 const benchmark = process.argv.includes("--benchmark");
-const cases = benchmark ? [{ext:"png",seconds:180,width:1920,height:1080},{ext:"jpg",seconds:295,width:1920,height:1080}] : ["png","jpg","gif"].map(ext=>({ext,seconds:1.5,width:1280,height:720}));
+const cases = benchmark
+  ? [{ext:"png",seconds:180,width:1920,height:1080,fit:"contain"},{ext:"jpg",seconds:295,width:1920,height:1080,fit:"contain"}]
+  : ["png","jpg","gif"].flatMap(ext=>["contain","cover"].map(fit=>({ext,seconds:1.5,width:1280,height:720,fit})));
 const results = [];
 const tmp = await mkdtemp(join(tmpdir(),"mvm-web-smoke-"));
 const base = "http://127.0.0.1:4173/music-video-maker/";
@@ -25,7 +27,8 @@ try {
   }
   run("ffmpeg",["-y","-f","lavfi","-i",benchmark?"testsrc2=size=1920x1080:rate=1":"color=c=red:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.png")]);
   run("ffmpeg",["-y","-f","lavfi","-i",benchmark?"testsrc=size=1920x1080:rate=1":"color=c=blue:s=64x48","-frames:v","1","-threads","1",join(tmp,"image.jpg")]);
-  run("ffmpeg",["-y","-f","lavfi","-i","testsrc=size=64x48:rate=5:duration=0.6","-threads","1",join(tmp,"image.gif")]);
+  // Two clearly distinguishable 200 ms frames; no embedded repeat flag.
+  run("ffmpeg",["-y","-f","lavfi","-i","color=c=red:s=64x48:r=5:d=0.2","-f","lavfi","-i","color=c=blue:s=64x48:r=5:d=0.2","-filter_complex","[0:v][1:v]concat=n=2:v=1:a=0","-threads","1","-loop","-1",join(tmp,"image.gif")]);
   server=spawn(process.execPath,["node_modules/vite/bin/vite.js","preview","--config","vite.web.config.ts","--host","127.0.0.1"],{stdio:"inherit"});
   await wait(async()=> (await fetch(base)).ok);
   chrome=spawn(process.env.CHROME_BIN||"google-chrome",["--headless","--no-sandbox","--disable-dev-shm-usage","--no-first-run","--remote-debugging-port=0","--user-data-dir="+join(tmp,"chrome"),"about:blank"],{stdio:"ignore"});
@@ -67,10 +70,11 @@ try {
     if((await stat(path)).size!==size)throw Error("Output size mismatch");
     return size;
   }
-  for(const {ext,seconds,width,height} of cases){
+  for(const {ext,seconds,width,height,fit} of cases){
     await call("DOM.setFileInputFiles",{nodeId:audio,files:[join(tmp,"audio-"+seconds+".mp3")]});
     await call("DOM.setFileInputFiles",{nodeId:visual,files:[join(tmp,"image."+ext)]});
     await evaluate("document.querySelector('#resolution').value="+JSON.stringify(width+"x"+height));
+    await evaluate("document.querySelector('#fit').value="+JSON.stringify(fit));
     await wait(()=>evaluate("!document.querySelector('#encode').disabled"));
     if(benchmark && seconds===180){
       await evaluate("document.querySelector('#encode').click()");
@@ -91,13 +95,23 @@ try {
     const wallSeconds=(performance.now()-started)/1000;
     const status=await evaluate("document.querySelector('#status').textContent");
     if(state!=="done")throw Error(ext+": "+status+" "+await evaluate("document.querySelector('#log').textContent"));
-    const path=join(tmp,ext+".mp4"),size=await saveOutput(path);
+    const path=join(tmp,ext+"-"+fit+".mp4"),size=await saveOutput(path);
     const info=JSON.parse(run("ffprobe",["-v","error","-show_streams","-show_format","-of","json",path]).toString());
     const v=info.streams.find(s=>s.codec_type==="video"),a=info.streams.find(s=>s.codec_type==="audio");
     const tolerance=benchmark?0.5:0.4;
     const validDuration=value=>Number.isFinite(Number(value))&&Math.abs(Number(value)-seconds)<=tolerance;
     if(v?.codec_name!=="h264"||v.width!==width||v.height!==height||v.pix_fmt!=="yuv420p"||v.r_frame_rate!=="30/1"||a?.codec_name!=="aac"||!validDuration(info.format.duration)||!validDuration(v.duration)||!validDuration(a.duration))throw Error("Invalid "+ext+" output: "+JSON.stringify(info));
-    console.log(ext+": "+status+"; FFprobe passed.");
+    if(!benchmark){
+      // Inspect decoded center pixels, including frames after the first GIF cycle.
+      // Static sources must retain their color through the final sample.
+      const samples=ext==="gif"?[[0.1,"red"],[0.3,"blue"],[0.5,"red"],[0.7,"blue"],[1.3,"red"]]:[[0.1,ext==="png"?"red":"blue"],[1.3,ext==="png"?"red":"blue"]];
+      for(const [time,color] of samples){
+        const rgb=run("ffmpeg",["-v","error","-ss",String(time),"-i",path,"-frames:v","1","-vf","crop=2:2,scale=1:1,format=rgb24","-threads","1","-f","rawvideo","-"]);
+        const red=rgb[0],blue=rgb[2];
+        if(rgb.length!==3 || !(color==="red"?red>180&&blue<80:blue>180&&red<80))throw Error("Wrong decoded color at "+time+"s: "+ext+"/"+fit+" "+Array.from(rgb));
+      }
+    }
+    console.log(ext+"/"+fit+": "+status+"; FFprobe passed."+(benchmark?"":" Frame samples passed."));
     const encodeSeconds=Number(status.match(/エンコード ([\d.]+) 秒/)?.[1]);
     if(!Number.isFinite(encodeSeconds)||encodeSeconds<=0)throw Error("Missing encode timing");
     results.push({ext,seconds,width,height,encodeSeconds,wallSeconds,outputMiB:size/1024/1024,baselineRssMiB:baseline,peakRssMiB:peak,realtimeRatio:seconds/encodeSeconds});

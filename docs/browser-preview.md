@@ -32,9 +32,26 @@ PR #77 の [ブラウザCI](https://github.com/naoiw/music-video-maker/actions/r
 
 長尺評価は `pnpm web:prepare`、`pnpm web:build` 後に `pnpm web:benchmark` で再現する（Chrome・ffmpeg・ffprobeがPATHに必要）。CIでも180秒のPNGと295秒のJPEGを1920×1080/30fpsで検証し、合成ステレオMP3とテストパターンのみ使用する。MP3のエンコーダー遅延により300秒上限をわずかに超えることを避けるため295秒にする。中断後の再試行、音声/映像/コンテナの尺、コーデック、寸法、fps、pixel formatを検証し、処理時間・全体時間・ファイルサイズ・Linux上のChromeプロセスRSS概算をActionsのSummaryに表示する。各長尺ケースは最大480秒で打ち切る（安全上の試験上限であり実用性の合格基準ではない）。合成素材での結果は実楽曲やユーザーPCの性能を保証しない。
 
+### PR #78 の基準値（最適化前）
+
+[PR CI](https://github.com/naoiw/music-video-maker/actions/runs/46039342378)・[main CI](https://github.com/naoiw/music-video-maker/actions/runs/46041444868) はいずれも成功。main の Chrome 158.0.8127.36 / Xeon 6975P-C (4 logical) / 15.3 GiB の測定値:
+
+| 素材 | 尺 | エンコード | 全体時間 | 出力 | Chrome RSS概算 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| PNG | 180秒 | 321.4秒 | 321.9秒 | 7.8 MiB | 1942 MiB |
+| JPEG | 295秒 | 335.9秒 | 336.2秒 | 9.1 MiB | 1411 MiB |
+
+別CPUのPR CIでは400.4秒/455.3秒だった。ランナー間の差があるため単純な比較で高速化率を断定しない。
+
+### 静止画処理の改善案
+
+PNG/JPEGは画像のデコード・スケール・配置・yuv420p変換を一度行い、変換済み1フレームだけをloopフィルタで反復する。30fps、CRF20、H.264/AAC、出力サイズ、-shortest、300秒上限を維持する。GIFは従来のstream_loopで全フレームを保持する。短いH.264区間をstream copyで反復する二段方式は、ネイティブFFmpegで-shortestだけでは映像尺が大幅に延びることを確認したため採用しない。音声尺の正確さを優先する。改善後のWASM性能はCIで確認する。
+
+ブラウザ短尺CIはcontain/coverの両方でPNG/JPEGの静止画保持、GIFの初回再生後の色変化・繰り返しを実際の出力フレームから確認する。#79のブラウザ側の一部に対応するが、Windows版のぼかし背景や未実装のブラウザ配置モードは対象外。
+
 ## 残件
 
-- 長尺ベンチマークCIの結果、PC Chrome/Edgeの実楽曲・1080p実測、長尺GIFループ、ネットワーク非送信の実機確認。
+- 静止画最適化後の長尺CI、PC Chrome/Edgeの実楽曲・1080p実測、長尺GIFループ、ネットワーク非送信の実機確認。
 - 第三者ライセンス・コーデック特許・安全性のレビュー、公開承認、実URL確認。
 - 既存GUIと機能の段階的統合。実用性や公開条件を満たせない場合は#29を中止する。
 
