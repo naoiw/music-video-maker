@@ -6,7 +6,7 @@ export function getSelectedVisual(): VisualSource | null {
   return selectedVisual;
 }
 
-export function initializeVisualSource(): void {
+export function initializeVisualSource(onChange: () => void = () => {}): void {
   const button = document.querySelector<HTMLButtonElement>("#select-visual");
   const name = document.querySelector<HTMLElement>("#visual-name");
   const details = document.querySelector<HTMLElement>("#visual-details");
@@ -19,6 +19,7 @@ export function initializeVisualSource(): void {
   button.disabled = false;
   button.addEventListener("click", async () => {
     button.disabled = true;
+    onChange();
     status.textContent = "画像を確認しています…";
     try {
       const selection = await selectVisual();
@@ -47,6 +48,7 @@ export function initializeVisualSource(): void {
       status.textContent = `読み込み失敗: ${String(error)}`;
     } finally {
       button.disabled = false;
+      onChange();
     }
   });
 }

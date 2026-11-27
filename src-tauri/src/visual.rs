@@ -12,7 +12,7 @@ const MAX_IMAGE_PIXELS: u64 = 40_000_000;
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VisualInfo {
     name: String,
-    format: &'static str,
+    pub(crate) format: &'static str,
     mime_type: &'static str,
     width: u32,
     height: u32,

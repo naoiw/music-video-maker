@@ -1,5 +1,6 @@
 mod audio;
 mod ffmpeg;
+mod video;
 mod visual;
 
 use serde::Serialize;
@@ -67,6 +68,19 @@ async fn load_visual(path: String) -> Result<visual::VisualInfo, String> {
         .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+async fn encode_static_video(
+    audio_path: String,
+    visual_path: String,
+    output_path: String,
+) -> Result<video::VideoInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        video::encode_static_video(&audio_path, &visual_path, &output_path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -74,7 +88,8 @@ pub fn run() {
             runtime_info,
             media_tool_status,
             probe_audio,
-            load_visual
+            load_visual,
+            encode_static_video
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Music Video Maker");
