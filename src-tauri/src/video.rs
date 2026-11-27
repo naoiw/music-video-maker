@@ -179,14 +179,7 @@ fn encoder_args(
         "-r",
         &fps,
     ]);
-    args.extend([
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-movflags",
-        "+faststart",
-    ]);
+    args.extend(["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]);
     if let Some(duration) = filtered_duration {
         args.extend(["-t", duration]);
     } else {
