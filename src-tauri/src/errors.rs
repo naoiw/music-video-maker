@@ -86,8 +86,10 @@ mod tests {
             let error = io::Error::from(kind);
             assert!(io_error("test", &error, "IO").starts_with(&format!("[MVM:{code}]")));
         }
-        assert!(tool_start_error("ffmpeg", &io::Error::from(ErrorKind::NotFound))
-            .starts_with("[MVM:TOOL_MISSING]"));
+        assert!(
+            tool_start_error("ffmpeg", &io::Error::from(ErrorKind::NotFound))
+                .starts_with("[MVM:TOOL_MISSING]")
+        );
     }
 
     #[test]

@@ -486,11 +486,9 @@ pub(crate) fn encode_video(
         })?
         .len();
     job.begin_saving()?;
-    temporary
-        .persist_noclobber(destination)
-        .map_err(|error| {
-            crate::errors::io_error("動画を保存できません", &error.error, "OUTPUT_IO")
-        })?;
+    temporary.persist_noclobber(destination).map_err(|error| {
+        crate::errors::io_error("動画を保存できません", &error.error, "OUTPUT_IO")
+    })?;
 
     Ok(VideoInfo {
         duration_seconds,
