@@ -1349,6 +1349,34 @@ fn rejects_wrong_streams_disguised_formats_and_recovers() {
     assert!(visual::load_visual(disguised.to_str().unwrap()).is_err());
     let info = audio::probe_audio(audio.to_str().unwrap()).unwrap();
     assert_eq!((info.sample_rate, info.channels), (32_000, 2));
+    let attached = dir.path().join("attached-cover.mp4");
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=32000:duration=1.2",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=yellow:s=160x90:d=0.04",
+            "-map",
+            "0:a:0",
+            "-map",
+            "1:v:0",
+            "-c:a",
+            "aac",
+            "-c:v",
+            "mjpeg",
+            "-disposition:v",
+            "attached_pic",
+            attached.to_str().unwrap(),
+        ])
+        .unwrap();
+    assert!(audio::probe_audio(attached.to_str().unwrap()).is_ok());
+    assert!(visual::load_visual(attached.to_str().unwrap()).is_err());
     let output = dir.path().join("retry.mp4");
     let settings = OutputSettings {
         fit: ImageFit::Cover,

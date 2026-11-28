@@ -123,9 +123,8 @@ fn measure_audio_duration(path: &str) -> Result<f64, String> {
     let progress = String::from_utf8_lossy(&output.stdout);
     progress
         .lines()
-        .filter_map(|line| line.strip_prefix("out_time_us="))
-        .filter_map(|value| positive_duration(Some(value)))
-        .last()
+        .rev()
+        .find_map(|line| positive_duration(line.strip_prefix("out_time_us=")))
         .map(|value| value / 1_000_000.0)
         .ok_or_else(|| "音声トラックの再生時間を取得できません。".to_owned())
 }
@@ -146,8 +145,8 @@ fn parse_info(name: String, bytes: &[u8], path: Option<&str>) -> Result<AudioInf
         return Err("拡張子と実際の音声形式が一致しないか、非対応のコーデックです。".into());
     }
 
-    let stream_duration = positive_duration(stream.duration.as_deref())
-        .or_else(|| tagged_duration(&stream.tags));
+    let stream_duration =
+        positive_duration(stream.duration.as_deref()).or_else(|| tagged_duration(&stream.tags));
     let sample_rate = stream
         .sample_rate
         .as_deref()
