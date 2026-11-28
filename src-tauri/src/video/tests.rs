@@ -1445,7 +1445,6 @@ fn falls_back_to_cpu_for_unavailable_hardware() {
     let dir = tempfile::tempdir().unwrap();
     let audio = dir.path().join("audio.wav");
     let image = dir.path().join("cover.png");
-    let output = dir.path().join("fallback.mp4");
     Tool::Ffmpeg
         .run(&[
             "-v",
@@ -1465,23 +1464,35 @@ fn falls_back_to_cpu_for_unavailable_hardware() {
     } else {
         Encoder::Videotoolbox
     };
-    let result = encode_video(
-        audio.to_str().unwrap(),
-        image.to_str().unwrap(),
-        output.to_str().unwrap(),
-        OutputSettings {
-            encoder: unavailable,
-            fit: ImageFit::Contain,
-            ..OutputSettings::default()
-        },
-        &[],
-        &[],
-        &EncodeJob::default(),
-    )
-    .unwrap();
-    assert_eq!(result.encoder, Encoder::Cpu);
-    assert!(result.fallback_reason.is_some());
-    assert!((result.duration_seconds - 1.2).abs() < 0.2);
-    assert!(output.is_file());
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3);
+    for (name, requested) in [("fallback", unavailable), ("auto", Encoder::Auto)] {
+        let output = dir.path().join(format!("{name}.mp4"));
+        let result = encode_video(
+            audio.to_str().unwrap(),
+            image.to_str().unwrap(),
+            output.to_str().unwrap(),
+            OutputSettings {
+                encoder: requested,
+                fit: ImageFit::Contain,
+                ..OutputSettings::default()
+            },
+            &[],
+            &[],
+            &EncodeJob::default(),
+        )
+        .unwrap();
+        if requested == unavailable {
+            assert_eq!(result.encoder, Encoder::Cpu);
+        }
+        assert_eq!(
+            result.encoder == Encoder::Cpu,
+            result.fallback_reason.is_some()
+        );
+        assert!((result.duration_seconds - 1.2).abs() < 0.2);
+        assert!(output.is_file());
+        eprintln!(
+            "{name}: {:?}, {:.2}s",
+            result.encoder, result.elapsed_seconds
+        );
+    }
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 4);
 }

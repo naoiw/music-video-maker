@@ -255,7 +255,7 @@ fn retryable(error: &str) -> bool {
         "[MVM:OUTPUT_VERIFY]",
     ]
     .iter()
-    .any(|prefix| error.starts_with(prefix))
+    .any(|&prefix| error.starts_with(prefix))
 }
 
 // Retry only failed hardware processing/verification, not cancellation,

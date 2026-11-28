@@ -1,6 +1,6 @@
 use crate::{audio, audio_filters, encode_job, encoder, ffmpeg::Tool, visual};
-use encoder::{Encoder, ProbeSpec};
 use encode_job::{EncodeJob, Phase};
+use encoder::{Encoder, ProbeSpec};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
