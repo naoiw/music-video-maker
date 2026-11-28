@@ -1612,3 +1612,69 @@ fn encodes_all_visualizer_styles_and_preserves_audio_duration() {
     }
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 6);
 }
+
+#[test]
+#[ignore = "requires FFmpeg and FFprobe"]
+fn visualizers_follow_tone_onset_and_selected_audio_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio = dir.path().join("tone.wav");
+    let base = dir.path().join("base.png");
+    let output = dir.path().join("sync.mp4");
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc=if(between(t\\,0.5\\,1.4)\\,0.8*sin(2*PI*440*t)\\,0):s=48000:d=2",
+            "-c:a",
+            "pcm_s16le",
+            audio.to_str().unwrap(),
+        ])
+        .unwrap();
+    image::RgbImage::from_pixel(160, 90, image::Rgb([0, 0, 180]))
+        .save(&base)
+        .unwrap();
+    let filters: Vec<audio_filters::FilterEntry> =
+        serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#)
+            .unwrap();
+    let mut original = overlay("", 100);
+    original.x = 1000;
+    original.y = 2000;
+    original.width = 8000;
+    original.height = 2000;
+    original.visualizer = Some(visualizer::Visualizer {
+        style: visualizer::Style::Volume,
+        audio_source: visualizer::AudioSource::Original,
+        color: "#ffffff".into(),
+        transparent: true,
+    });
+    let mut processed = original.clone();
+    processed.y = 6000;
+    processed.visualizer.as_mut().unwrap().audio_source = visualizer::AudioSource::Processed;
+    let info = encode_video(
+        audio.to_str().unwrap(),
+        base.to_str().unwrap(),
+        output.to_str().unwrap(),
+        OutputSettings {
+            fit: ImageFit::Contain,
+            ..OutputSettings::default()
+        },
+        &filters,
+        &[original, processed],
+        &EncodeJob::default(),
+    )
+    .unwrap();
+    assert!((info.duration_seconds - 2.0).abs() < 0.2);
+    // At 60% of the bar width, only the original 0.8-amplitude tone
+    // reaches this point; the processed tone is approximately 0.4.
+    let before = sample_color_at(&output, "0.2", "crop=2:2:1112:324,format=rgb24");
+    let original = sample_color_at(&output, "1.0", "crop=2:2:1112:324,format=rgb24");
+    let processed = sample_color_at(&output, "1.0", "crop=2:2:1112:756,format=rgb24");
+    assert_eq!(original.len(), 12);
+    assert!(before[2] > 120 && before[0] < 40, "{before:?}");
+    assert!(original[0] > 150 && original[1] > 150, "{original:?}");
+    assert!(processed[2] > 120 && processed[0] < 40, "{processed:?}");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3);
+}

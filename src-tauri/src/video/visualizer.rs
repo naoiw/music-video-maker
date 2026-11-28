@@ -1,10 +1,10 @@
 //! Render finite audio-driven intermediates before compositing infinite visuals.
 
-use super::OutputSettings;
+use super::{output::positive_duration, OutputSettings};
 use crate::{
     audio, encode_job,
     encode_job::{EncodeJob, Phase},
-    errors,
+    errors, ffmpeg::Tool,
 };
 use serde::Deserialize;
 use std::path::Path;
@@ -124,5 +124,31 @@ pub(super) fn render(
         job,
         Phase::Filtering,
         progress,
-    )
+    )?;
+    job.check_cancelled()?;
+    let probe = Tool::Ffprobe.run(&[
+        "-v",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "matroska",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        "-i",
+        output_path,
+    ])?;
+    let actual = positive_duration(String::from_utf8_lossy(&probe.stdout).trim())
+        .map_err(|error| errors::tagged("OUTPUT_VERIFY", error))?;
+    let expected = positive_duration(duration)
+        .map_err(|error| errors::tagged("OUTPUT_VERIFY", error))?;
+    if (actual - expected).abs() > 0.2 {
+        return Err(errors::tagged(
+            "OUTPUT_VERIFY",
+            format!("ビジュアライザーの長さが一致しません（{actual:.3} / {expected:.3} 秒）。"),
+        ));
+    }
+    job.check_cancelled()
 }

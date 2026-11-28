@@ -415,7 +415,13 @@ pub(crate) fn encode_video(
                     visualizer::AudioSource::Processed => input,
                 };
                 visualizer::render(
-                    config, source, path, settings, &duration, job, (offset, weight),
+                    config,
+                    source,
+                    path,
+                    settings,
+                    &duration,
+                    job,
+                    (offset, weight),
                 )?;
                 layer.path = path.to_owned();
                 offset += weight;
