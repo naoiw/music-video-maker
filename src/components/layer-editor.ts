@@ -156,7 +156,7 @@ export function initializeLayerEditor(hasBase: () => boolean, onChange: () => vo
     if (locked || loading || !hasBase() || entries.length >= MAX_OVERLAYS) return;
     loading = true;
     onChange();
-    status!.textContent = "画像を確認しています…";
+    status!.textContent = "映像素材を確認しています…";
     try {
       const selection = await loadVisualPreview("overlay-image", path);
       if (!selection) {

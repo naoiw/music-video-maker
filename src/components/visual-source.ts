@@ -66,7 +66,7 @@ export function refreshVisualPreview(settings: OutputSettings): void {
     if (preview.firstElementChild !== originalImage) preview.replaceChildren(originalImage);
     return;
   }
-  if (selectedVisual.format === "GIF") {
+  if (["GIF", "MP4", "WebM"].includes(selectedVisual.format)) {
     pending = null;
     preview.replaceChildren(animatedBlurredPreview(originalImage, selectedVisual, settings));
     return;
@@ -95,7 +95,7 @@ export function initializeVisualSource(onChange: () => void = () => {}): (path?:
     if (button.disabled) return;
     button.disabled = true;
     onChange();
-    status.textContent = "画像を確認しています…";
+    status.textContent = "映像素材を確認しています…";
     try {
       const selection = await loadVisualPreview("preview-image", path);
       if (!selection) {

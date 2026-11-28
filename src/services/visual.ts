@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 export interface VisualSource {
   path: string;
   name: string;
-  format: "PNG" | "JPEG" | "GIF";
+  format: "PNG" | "JPEG" | "GIF" | "WebP" | "MP4" | "WebM";
   width: number;
   height: number;
   sizeBytes: number;
@@ -23,13 +23,13 @@ export interface VisualSelection {
 export async function selectVisual(): Promise<VisualSelection | null> {
   if (!isTauri()) return null;
   const path = await open({
-    title: "画像ファイルを選択",
+    title: "映像素材を選択",
     multiple: false,
     directory: false,
-    filters: [{ name: "画像", extensions: ["png", "jpg", "jpeg", "gif"] }],
+    filters: [{ name: "映像素材", extensions: ["png", "jpg", "jpeg", "gif", "webp", "mp4", "webm"] }],
   });
   if (path === null) return null;
-  if (typeof path !== "string") throw new Error("画像を1ファイル選択してください。");
+  if (typeof path !== "string") throw new Error("映像素材を1ファイル選択してください。");
 
   return loadVisual(path);
 }
