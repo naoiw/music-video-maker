@@ -1,11 +1,9 @@
 import {
-  defaultSettings, settingsIds, validateSettings, type SettingId, type SettingsValues,
+  defaultSettings, settingsIds, validateSettings, outputIds, type OutputId, type SettingId, type SettingsValues,
 } from "./settings-schema.ts";
 
-type OutputId = "resolution" | "fps" | "fit" | "quality";
 type FilterId = Exclude<SettingId, OutputId>;
-const outputIds: readonly SettingId[] = ["resolution", "fps", "fit", "quality"];
-export const filterIds = settingsIds.filter((id): id is FilterId => !outputIds.includes(id));
+export const filterIds = settingsIds.filter((id): id is FilterId => !outputIds.some(outputId => outputId === id));
 export type FilterSettings = Pick<SettingsValues, FilterId>;
 export interface FilterPreset {
   name: string;
@@ -43,7 +41,8 @@ export function validateFilterSettings(value: unknown): FilterSettings | null {
 }
 
 export function defaultFilterSettings(): FilterSettings {
-  return Object.fromEntries(filterIds.map(id => [id, defaultSettings()[id]])) as FilterSettings;
+  const defaults = defaultSettings();
+  return Object.fromEntries(filterIds.map(id => [id, defaults[id]])) as FilterSettings;
 }
 
 function validatePresets(value: unknown): FilterPreset[] | null {

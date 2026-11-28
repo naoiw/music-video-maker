@@ -1,4 +1,6 @@
 import { reportError } from "./diagnostics";
+import { parseOutputSettings, outputIds } from "../services/settings-schema";
+import { readSettingControls } from "../services/settings-controls";
 import { getSelectedAudio } from "./audio-source";
 import { getFilterChain } from "./audio-filters";
 import { getSelectedVisual, refreshVisualPreview } from "./visual-source";
@@ -37,15 +39,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
   let canCancel = false;
 
   function readSettings(): OutputSettings | null {
-    const size = resolution!.value;
-    const frames = Number(fps!.value);
-    const crf = Number(quality!.value);
-    const mode = fit!.value;
-    if (!["1920x1080", "1080x1080", "1080x1920"].includes(size) ||
-        ![24, 30, 60].includes(frames) || ![16, 20, 24].includes(crf) ||
-        (mode !== "blurred" && mode !== "contain" && mode !== "cover")) return null;
-    const [width, height] = size.split("x").map(Number);
-    return { width, height, fps: frames, crf, fit: mode };
+    return parseOutputSettings(readSettingControls(outputIds));
   }
 
   function validFilterInputs(): boolean {

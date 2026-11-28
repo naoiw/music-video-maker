@@ -35,7 +35,7 @@ MP3 と画像を合成し、音声フィルタで音質を調整して YouTube �
 - 出力・音声フィルタ設定の自動保存と復元、名前付きフィルタプリセット。
 - 生成進捗と中断、既存出力の保護、エラー時の対処方法と診断情報。
 
-対象は Windows 10 / 11 x64。複数素材、動画素材、ブラウザ版は MVP 対象外です。
+対象は Windows 10 / 11 x64。複数素材、動画素材は MVP 対象外です。
 
 ## 開発
 
@@ -50,7 +50,6 @@ Rust / Tauri / TypeScript / Vite / pnpm / FFmpeg を使用しています。
 - [環境構築とビルド](docs/setup.md)
 - [FFmpeg / FFprobe](docs/ffmpeg.md)
 - [MVP総合検証](docs/mvp-validation.md)
-- [ブラウザ版の技術検証（Post-MVP）](docs/browser-feasibility.md)
 - [Issues](https://github.com/naoiw/music-video-maker/issues)
 
 ## License

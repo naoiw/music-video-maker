@@ -33,7 +33,16 @@ export type SettingValue = string | boolean | number;
 export type SettingsValues = Record<SettingId, SettingValue>;
 export const settingsIds = Object.keys(settingsFields) as SettingId[];
 export const SETTINGS_VERSION = 1;
-
+export const outputIds = ["resolution", "fps", "fit", "quality"] as const;
+export type OutputId = (typeof outputIds)[number];
+export type Fit = (typeof settingsFields.fit.options)[number];
+export interface OutputSettings {
+  width: number;
+  height: number;
+  fps: number;
+  crf: number;
+  fit: Fit;
+}
 export function defaultSettings(): SettingsValues {
   return Object.fromEntries(settingsIds.map(id => [id, settingsFields[id].initial])) as SettingsValues;
 }
@@ -54,6 +63,13 @@ function validValue(field: Field, value: unknown): value is SettingValue {
   }
   const steps = (value - field.min) / field.step;
   return Math.abs(steps - Math.round(steps)) < 1e-8;
+}
+
+/** Output selects use strings; normalize only after validating every choice. */
+export function parseOutputSettings(value: unknown): OutputSettings | null {
+  if (!isRecord(value) || !outputIds.every(id => Object.hasOwn(value,id) && validValue(settingsFields[id], value[id]))) return null;
+  const [width,height] = (value.resolution as string).split("x").map(Number);
+  return { width, height, fps:Number(value.fps), crf:Number(value.quality), fit:value.fit as Fit };
 }
 
 /** Validate static UI bounds. Sample-rate-dependent limits are checked at use time. */

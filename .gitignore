@@ -14,7 +14,3 @@ Thumbs.db
 
 # Tauri generated schemas
 /src-tauri/gen/schemas/
-
-# Browser-only generated assets
-/dist-web/
-/web/public/core-manifest.json
