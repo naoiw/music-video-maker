@@ -983,6 +983,9 @@ mod tests {
             ])
             .unwrap();
 
+        let base = dir.path().join("base.png");
+        image::RgbImage::new(160, 90).save(&base).unwrap();
+
         for (name, repeat) in [
             ("no-loop", None),
             ("finite-loop", Some(Repeat::Finite(1))),
@@ -1062,6 +1065,41 @@ mod tests {
                     }
                 }
             }
+
+            // The same GIF used as an additional layer must animate beyond
+            // the source duration, regardless of its embedded repeat count.
+            let output = dir.path().join(format!("{name}-overlay.mp4"));
+            let info = encode_video(
+                audio.to_str().unwrap(),
+                base.to_str().unwrap(),
+                output.to_str().unwrap(),
+                OutputSettings {
+                    fit: ImageFit::Contain,
+                    ..OutputSettings::default()
+                },
+                &[],
+                &[overlay(cover.to_str().unwrap(), 100)],
+                &EncodeJob::default(),
+            )
+            .unwrap();
+            assert!((info.duration_seconds - 2.3).abs() < 0.2);
+            for (timestamp, red) in [
+                ("0.1", true),
+                ("0.35", false),
+                ("1.6", true),
+                ("1.85", false),
+                ("2.1", true),
+            ] {
+                let pixel = sample_color(&output, timestamp);
+                assert_eq!(pixel.len(), 12);
+                if red {
+                    assert!(pixel[0] > 200 && pixel[2] < 50, "{name}: {timestamp}");
+                } else {
+                    assert!(pixel[2] > 200 && pixel[0] < 50, "{name}: {timestamp}");
+                }
+            }
+            let corner = sample_color_at(&output, "1.6", "crop=2:2:20:20,format=rgb24");
+            assert!(corner.iter().all(|value| *value < 30));
         }
     }
 

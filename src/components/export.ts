@@ -4,6 +4,7 @@ import { readSettingControls } from "../services/settings-controls";
 import { getSelectedAudio } from "./audio-source";
 import { getFilterChain } from "./audio-filters";
 import { getSelectedVisual, refreshVisualPreview } from "./visual-source";
+import { getOverlays, overlaysReady, refreshLayerEditor } from "./layer-editor";
 import { cancelEncode, encodeVideo, getEncodeProgress, selectOutput, type OutputSettings } from "../services/video";
 
 export function initializeExport(available: boolean, refreshPreview: () => void): () => void {
@@ -50,6 +51,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
   function refresh(): void {
     const settings = readSettings();
     fieldset!.disabled = !available || encoding;
+    refreshLayerEditor(settings, encoding);
     resetSettingsButton!.disabled = encoding;
     for (const section of filterPanel!.querySelectorAll<HTMLFieldSetElement>(":scope > fieldset")) {
       section.disabled = !available || encoding;
@@ -67,12 +69,13 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
     outputButton!.disabled = !available || encoding || choosingOutput;
     startButton!.disabled = !available || encoding || choosingOutput ||
       audioButton!.disabled || visualButton!.disabled ||
-      !audio || !visual || !outputPath || !settings || !validFilterInputs();
+      !audio || !visual || !outputPath || !settings || !validFilterInputs() || !overlaysReady();
     if (encoding || choosingOutput) return;
     progress!.value = 0;
     status!.textContent = !available ? "FFmpegとFFprobeが必要です。" :
       !audio || !visual || !outputPath ? "音声・画像と保存先を選択してください。" :
       !settings ? "出力設定が無効です。" :
+      !overlaysReady() ? "追加レイヤーの読み込み・設定を確認してください。" :
       !validFilterInputs() ? "音声フィルタの設定値を確認してください。" :
       `${settings.width} × ${settings.height} / ${settings.fps} fps / CRF ${settings.crf} で生成できます。`;
   }
@@ -160,7 +163,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
     const audio = getSelectedAudio();
     const visual = getSelectedVisual();
     const settings = readSettings();
-    if (startButton.disabled || !audio || !visual || !outputPath || !settings || !validFilterInputs()) return;
+    if (startButton.disabled || !audio || !visual || !outputPath || !settings || !validFilterInputs() || !overlaysReady()) return;
     const filters = getFilterChain();
     const id = ++nextJobId;
     activeJobId = id;
@@ -182,7 +185,7 @@ export function initializeExport(available: boolean, refreshPreview: () => void)
     let resultMessage: string;
     let succeeded = false;
     try {
-      const info = await encodeVideo(audio.path, visual.path, outputPath, settings, filters, id);
+      const info = await encodeVideo(audio.path, visual.path, outputPath, settings, filters, id, getOverlays());
       succeeded = true;
       resultMessage = `生成完了 · ${info.durationSeconds.toFixed(1)} 秒 · ${(info.sizeBytes / 1024 / 1024).toFixed(2)} MiB`;
       // Require a new destination for the next export; never overwrite.

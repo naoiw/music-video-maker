@@ -55,7 +55,7 @@ function animatedBlurredPreview(image: HTMLImageElement, source: VisualSource, s
 
 /** Use exact native composition for static images and live playback for GIFs. */
 export function refreshVisualPreview(settings: OutputSettings): void {
-  const preview = document.getElementById("visual-preview");
+  const preview = document.getElementById("visual-preview-base");
   if (!preview || !selectedVisual || !originalImage) return;
   const key = `${sourceRevision}:${settings.width}x${settings.height}:${settings.fit}`;
   if (key === requestedKey) return;
@@ -84,7 +84,7 @@ export function initializeVisualSource(onChange: () => void = () => {}): (path?:
   const name = document.querySelector<HTMLElement>("#visual-name");
   const details = document.querySelector<HTMLElement>("#visual-details");
   const status = document.querySelector<HTMLElement>("#visual-status");
-  const preview = document.querySelector<HTMLElement>("#visual-preview");
+  const preview = document.querySelector<HTMLElement>("#visual-preview-base");
   if (!button || !name || !details || !status || !preview) {
     throw new Error("Missing visual source elements");
   }

@@ -8,6 +8,7 @@ import { initializeSettingsPersistence, restoreSettings } from "./components/set
 import { initializeSourceDrop } from "./components/source-drop";
 import { initializeExport } from "./components/export";
 import { initializeVisualSource } from "./components/visual-source";
+import { initializeLayerEditor } from "./components/layer-editor";
 import { getMediaToolStatus, getRuntimeInfo } from "./services/runtime";
 
 async function initialize(): Promise<void> {
@@ -27,6 +28,7 @@ async function initialize(): Promise<void> {
     const savedSettings = await restoreSettings();
     let refreshExport = (): void => {};
     const loadVisual = initializeVisualSource(() => refreshExport());
+    initializeLayerEditor(() => refreshExport());
     const result = await getMediaToolStatus();
     if (!result) {
       media.textContent = "メディア処理環境を取得できません。";
