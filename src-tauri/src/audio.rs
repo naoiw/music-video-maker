@@ -65,12 +65,9 @@ fn matches_format(ext: &str, format: &str, codec: &str) -> bool {
         "flac" => has("flac") && codec == "flac",
         "aac" => has("aac") && codec == "aac",
         "m4a" => has("mov") && matches!(codec, "aac" | "alac"),
-        "mp4" | "mov" => {
-            has("mov") && matches!(codec, "aac" | "alac" | "mp3" | "opus" | "flac")
-        }
+        "mp4" | "mov" => has("mov") && matches!(codec, "aac" | "alac" | "mp3" | "opus" | "flac"),
         "mkv" => {
-            has("matroska")
-                && matches!(codec, "aac" | "flac" | "mp3" | "opus" | "vorbis" | "alac")
+            has("matroska") && matches!(codec, "aac" | "flac" | "mp3" | "opus" | "vorbis" | "alac")
         }
         "webm" => has("webm") && matches!(codec, "opus" | "vorbis"),
         _ => false,
