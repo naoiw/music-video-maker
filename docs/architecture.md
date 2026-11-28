@@ -75,4 +75,4 @@ blurredモードはRust imageクレートで同一素材を背景cover・ガウ�
 - `video/output.rs`: 保存先と FFprobe の出力結果の検証。
 - `video/tests.rs`: 従来の単体・FFmpeg 結合テスト。
 
-音声入力は audio::AUDIO_FORMATS を FFprobe・試聴・音声加工・動画生成で共用し、最初の音声ストリームを明示的にマッピングする。映像入力拡張は後続の #31 で扱う。
+音声入力は audio::AUDIO_FORMATS を FFprobe・試聴・音声加工・動画生成で共用し、最初の音声ストリームを明示的にマッピングする。映像入力は `visual::inspect_visual` でエンコード時に再検証し、`load_visual` では動画を最大8秒の小さな無音GIFに変換してIPCで渡す。元動画全体は転送しない。静止画WebPはFFmpegでPNGへデコードしてぼかし合成にも利用する。追加の動画入力は `-stream_loop -1` と `V:0`（添付画像を除外）で選択し、音声側は `a:0` を明示して出力する。用途別ドロップはネイティブ物理座標をWindowsの表示倍率でCSS座標に換算する。
