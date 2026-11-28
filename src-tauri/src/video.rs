@@ -371,15 +371,14 @@ pub(crate) fn encode_video(
     ])?;
     let duration_seconds = validate_output(&probe.stdout, settings)
         .map_err(|error| crate::errors::tagged("OUTPUT_VERIFY", error))?;
-    if let Some(audio) = prepared
+    let expected_duration = prepared
         .as_ref()
-        .filter(|audio| (duration_seconds - audio.duration).abs() > 0.2)
-    {
+        .map_or(audio_info.duration_seconds, |audio| audio.duration);
+    if (duration_seconds - expected_duration).abs() > 0.2 {
         return Err(crate::errors::tagged(
             "OUTPUT_VERIFY",
             format!(
-                "動画の長さが加工音と一致しません（動画 {duration_seconds:.3} 秒、加工音 {:.3} 秒）。",
-                audio.duration
+                "動画の長さが音声と一致しません（動画 {duration_seconds:.3} 秒、音声 {expected_duration:.3} 秒）。"
             ),
         ));
     }
