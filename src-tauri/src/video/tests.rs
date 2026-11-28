@@ -1272,7 +1272,12 @@ fn combines_independent_video_layers_and_uses_only_selected_audio() {
     )
     .unwrap();
     assert!((result.duration_seconds - 1.6).abs() < 0.2);
-    for (time, red) in [("0.2", true), ("0.55", false), ("1.05", true), ("1.4", false)] {
+    for (time, red) in [
+        ("0.2", true),
+        ("0.55", false),
+        ("1.05", true),
+        ("1.4", false),
+    ] {
         let pixel = sample_color_at(&output, time, "crop=2:2:700:540,format=rgb24");
         assert_eq!(pixel.len(), 12);
         if red {
