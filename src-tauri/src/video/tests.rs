@@ -41,7 +41,7 @@ fn layered_arguments_preserve_order_paths_and_audio_mapping() {
         VisualKind::Png,
         "out.mp4",
         OutputSettings::default(),
-        None,
+        AudioTiming::Original("3.200000"),
         &[(&first, VisualKind::Png), (&second, VisualKind::Gif)],
     );
     let paths: Vec<&str> = args
@@ -58,7 +58,7 @@ fn layered_arguments_preserve_order_paths_and_audio_mapping() {
             second.path.as_str()
         ]
     );
-    assert!(args.windows(2).any(|pair| pair == ["-map", "[out1]"]));
+    assert!(args.windows(2).any(|pair| pair == ["-map", "[timed]"]));
     assert!(args.windows(2).any(|pair| pair == ["-map", "1:a:0"]));
     assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "0"]));
     let graph = &args[args
@@ -69,6 +69,7 @@ fn layered_arguments_preserve_order_paths_and_audio_mapping() {
     assert!(graph.contains("[2:v]"));
     assert!(graph.contains("[3:v]"));
     assert!(graph.contains("[out0][layer1]overlay"));
+    assert!(graph.contains("[out1]trim=duration=3.200000[timed]"));
     assert!(graph.contains("colorchannelmixer=aa=0.5"));
     assert!(!graph.contains(&first.path));
     assert!(!args.iter().any(|arg| arg == "-vf"));
@@ -139,7 +140,7 @@ fn arguments_keep_paths_separate_and_map_only_requested_streams() {
         VisualKind::Png,
         "temp.mp4",
         OutputSettings::default(),
-        None,
+        AudioTiming::Original("3.200000"),
         &[],
     );
     assert!(args.windows(2).any(|pair| pair == ["-i", "cover %d.png"]));
@@ -148,7 +149,10 @@ fn arguments_keep_paths_separate_and_map_only_requested_streams() {
         .windows(2)
         .any(|pair| pair == ["-pattern_type", "none"]));
     assert!(args.windows(2).any(|pair| pair == ["-map", "1:a:0"]));
-    assert!(args.iter().any(|arg| arg == "-shortest"));
+    assert!(!args.iter().any(|arg| arg == "-shortest" || arg == "-t"));
+    assert!(args
+        .iter()
+        .any(|arg| arg.contains("fps=30,trim=duration=3.200000")));
     assert_eq!(args.last().map(String::as_str), Some("temp.mp4"));
 }
 
@@ -160,7 +164,7 @@ fn gif_arguments_use_normalized_infinite_loop() {
         VisualKind::Gif,
         "temp.mp4",
         OutputSettings::default(),
-        None,
+        AudioTiming::Original("3.200000"),
         &[],
     );
     assert!(args.windows(2).any(|pair| pair == ["-f", "gif"]));
@@ -171,7 +175,10 @@ fn gif_arguments_use_normalized_infinite_loop() {
         .iter()
         .any(|arg| arg.contains("overlay=(W-w)/2:(H-h)/2")));
     assert!(!args.iter().any(|arg| arg == "-pattern_type"));
-    assert!(args.iter().any(|arg| arg == "-shortest"));
+    assert!(!args.iter().any(|arg| arg == "-shortest" || arg == "-t"));
+    assert!(args
+        .iter()
+        .any(|arg| arg.contains("fps=30,trim=duration=3.200000")));
 }
 
 #[test]
@@ -434,7 +441,15 @@ fn validates_settings_and_generates_fit_filters() {
     };
     assert!(cover.validate().is_ok());
     assert!(cover.filter().contains("crop=1080:1920"));
-    let args = encoder_args("a.mp3", "b.png", VisualKind::Png, "c.mp4", cover, None, &[]);
+    let args = encoder_args(
+        "a.mp3",
+        "b.png",
+        VisualKind::Png,
+        "c.mp4",
+        cover,
+        AudioTiming::Original("3.200000"),
+        &[],
+    );
     for expected in [["-framerate", "60"], ["-r", "60"], ["-crf", "16"]] {
         assert!(args.windows(2).any(|pair| pair == expected));
     }
@@ -586,24 +601,29 @@ fn encodes_cancel_and_retry() {
 }
 
 #[test]
-fn uses_explicit_duration_for_prepared_audio() {
+fn bounds_original_video_and_prepared_output_without_shortest() {
     let args = encoder_args(
         "a.mp3",
         "b.png",
         VisualKind::Png,
         "out.mp4",
         OutputSettings::default(),
-        None,
+        AudioTiming::Original("3.200000"),
         &[],
     );
-    assert!(!args.iter().any(|arg| arg == "-af"));
+    assert!(!args
+        .iter()
+        .any(|arg| arg == "-af" || arg == "-shortest" || arg == "-t"));
+    assert!(args
+        .iter()
+        .any(|arg| arg.contains("fps=30,trim=duration=3.200000")));
     let args = encoder_args(
         "filtered.wav",
         "b.png",
         VisualKind::Png,
         "out.mp4",
         OutputSettings::default(),
-        Some("3.200000"),
+        AudioTiming::Prepared("3.200000"),
         &[],
     );
     assert!(args.windows(2).any(|pair| pair == ["-f", "wav"]));
@@ -757,7 +777,7 @@ fn accepts_every_supported_output_settings_combination() {
                         VisualKind::Png,
                         "out.mp4",
                         settings,
-                        None,
+                        AudioTiming::Original("3.200000"),
                         &[],
                     );
                     for (flag, value) in [
