@@ -1,10 +1,10 @@
 # Music Video Maker ユーザーガイド
 
-Music Video Maker は、音声と画像・動画から YouTube 投稿などに使える MP4 を作成する Windows 向けローカル GUI ツールです。Suno の楽曲だけでなく、対応する任意の音声素材 を使用できます。素材のアップロードやアカウント登録は必要ありません。
+Music Video Maker は、音声と画像・動画から YouTube 投稿などに使える MP4 を作成する デスクトップ向けローカル GUI ツールです。Suno の楽曲だけでなく、対応する任意の音声素材 を使用できます。素材のアップロードやアカウント登録は必要ありません。
 
 ## 1. ソース取得・ビルド・起動
 
-対象は Windows 10 / 11 x64 です。ビルド済みバイナリは公開しません。
+対象は Windows 10 / 11 x64、macOS（Apple Silicon / Intel）、Ubuntu 24.04 x64（追加対象の実機GUIは要確認）です。ビルド済みバイナリは公開しません。Windows の手順は以下。macOS / Linux は Node.js 26、rustup 等を用意して `bash setup.sh`、`bash build.sh`、`bash run.sh` を実行します。[環境構築とビルド](setup.md) を参照。
 
 1. [リポジトリ](https://github.com/naoiw/music-video-maker) の Code → Download ZIP からソースを取得し、「すべて展開」する（git clone でも可）。
 2. `setup.bat` をダブルクリックし、不足するツールの導入を行う。初回はネット接続・インストーラーの操作が必要。
@@ -102,7 +102,7 @@ X・Y位置と幅・高さは出力画面に対する百分率です。例えば
 
 「出力・フィルタ設定を初期化」は出力設定と音声フィルタを初期状態へ戻します。素材、保存先、保存済みプリセットは維持します。
 
-設定は `%APPDATA%\win.tiym.music-video-maker` 内の settings.json、プリセットは同じ場所の presets.json に保存されます。エクスプローラーのアドレスバーから開けます。設定を引き継ぐ場合はアプリを終了してからこの2ファイルをバックアップしてください。
+設定は Tauri のアプリ設定ディレクトリ内の settings.json、プリセットは同じ場所の presets.json に保存されます。Windows は `%APPDATA%\win.tiym.music-video-maker`、macOS は `~/Library/Application Support/win.tiym.music-video-maker`、Linux は `$XDG_CONFIG_HOME/win.tiym.music-video-maker`（未設定時は `~/.config/win.tiym.music-video-maker`）です。設定を引き継ぐ場合はアプリを終了してからこの2ファイルをバックアップしてください。
 
 ## 7. 生成の中断・再実行
 
@@ -114,8 +114,8 @@ X・Y位置と幅・高さは出力画面に対する百分率です。例えば
 
 | 症状 | 確認・対処 |
 | --- | --- |
-| アプリが起動しない | Windows x64 か、build.bat が成功したか、WebView2 Runtime が導入されているかを確認する。 |
-| 音声の選択や生成ができない | 画面下部の「実行環境」を開き、FFmpeg と FFprobe の検出状態を確認する。setup.bat を実行し、PATH の反映後にアプリを再起動する。 |
+| アプリが起動しない | OSに合ったビルド手順と依存関係を確認する。Windows は WebView2、Linux は WebKitGTK 4.1、macOS/Linux はターミナルから run.sh で起動する。 |
+| 音声の選択や生成ができない | 画面下部の「実行環境」を開き、FFmpeg と FFprobe の検出状態を確認する。OSに合った setup.bat / setup.sh を実行し、PATH の反映後にアプリを再起動する。 |
 | 音声を読み込めない | 対応形式・音声ストリーム・サンプルレート・チャンネル数を確認する。拡張子のみを変更しても別のコンテナ形式は受理しない。 |
 | 画像を読み込めない | 対応画像（32 MiB以下）・動画（2 GiB以下）、4000万画素以下か確認する。破損・非対応画像は別の画像に置き換える。 |
 | GIFが動かない | 元GIFが複数フレームを含むか確認する。プレビューが有限回で止まっても、MP4出力は音声終了まで繰り返す。 |
@@ -128,7 +128,7 @@ X・Y位置と幅・高さは出力画面に対する百分率です。例えば
 
 ### 解決しない場合
 
-画面下部の「診断情報（直近8件）」を開き、発生時刻・操作・エラーコード・詳細を確認します。[GitHub Issues](https://github.com/naoiw/music-video-maker/issues) に報告する場合は、アプリのバージョン、Windows のバージョン、FFmpeg/FFprobe の検出情報、再現手順、出力設定と有効なフィルタ、エラーコードを添えてください。
+画面下部の「診断情報（直近8件）」を開き、発生時刻・操作・エラーコード・詳細を確認します。[GitHub Issues](https://github.com/naoiw/music-video-maker/issues) に報告する場合は、アプリのバージョン、OS・CPUの情報、FFmpeg/FFprobe の検出情報、再現手順、出力設定と有効なフィルタ、エラーコードを添えてください。
 
 診断情報には個人のファイルパスが含まれる場合があります。共有前に個人情報を取り除き、楽曲・画像そのものや個人情報は公開しないでください。診断情報はアプリ内で保持され、外部送信・自動ファイル保存はされません。
 
@@ -137,7 +137,7 @@ X・Y位置と幅・高さは出力画面に対する百分率です。例えば
 - 入力：MP3 / PCM WAV / FLAC / AAC / M4A / MP4 / WebM / MOV / MKV の音声素材1件（8～48 kHz、1～2ch）、PNG / JPEG / GIF / 静止画 WebP / MP4 / WebM / MOV / MKV のベース映像素材1件と追加レイヤー最大8件。画像・GIFは32 MiB以下、動画は2 GiB以下、いずれも4000万画素以下。
 - 出力：H.264 / AAC の MP4。出力解像度・FPS・品質は上記の選択肢のみ。
 - 音声の元ファイルや画像を外部に送信しない。アプリは YouTube へのアップロードや投稿を行わない。
-- アニメーションWebP、Ogg/Opus単体入力、AIノイズ除去、GPUエンコード、macOS/Linux の正式配布は未対応。歌詞表示（#37）と一括生成（#38）は対応予定なし。
+- アニメーションWebP、Ogg/Opus単体入力、AIノイズ除去、GPUエンコードは未対応。全OSでバイナリ・インストーラー配布は対象外。歌詞表示（#37）と一括生成（#38）は対応予定なし。
 - YouTube での実際の投稿・再生、Windows クリーン環境でのセットアップ・ビルド・起動は初回リリース前の総合確認事項。現時点で確認済みとはしない。
 - 利用する楽曲や画像は投稿・利用に必要な権利を確認する。
 

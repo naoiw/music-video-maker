@@ -51,3 +51,7 @@ MP3、PCM WAV、FLAC、AAC、M4A（AAC/ALAC）、MP4/MOV（AAC/ALAC/MP3/Opus/FLA
 PNG / JPEG / GIF / 静止画 WebP / MP4 / WebM / MOV / MKV をベース・追加レイヤーとして使用できる。動画の最初の非添付映像ストリームだけを採用し、元音声等を混ぜない。短い動画は音声終了まで繰り返し、長い動画は切り詰める。元の動画を出力に使用し、プレビューは最大8秒・10fps・360px以内の無音GIF近似表示とする。動画最大2 GiB、画像最大32 MiB、寸法は4000万画素以下。アニメーションWebPは静止画にせず拒否する。対応コーデックはユーザーガイド参照。最初の対象ストリームが非対応なら明示的なエラーとする。
 
 音声尺が動画コンテナの音声トラックから取得できない場合、および生AACの場合は、音声だけをデコードして尺を測定する。動画全体の長さを代用しない。加工なし・ありの両経路で出力尺を音声尺と比較し、許容差0.2秒を超える出力を公開しない。
+
+## Post-MVP：macOS / Linux（#39）
+
+Windowsのsetup.bat / build.batを維持し、macOS（Apple Silicon / Intel）・Ubuntu 24.04 x64ではsetup.sh / build.sh / run.shを利用する。Node・pnpm・Cargo lockfileの方針は共通。TauriネイティブビルドとFFmpegの全結合テストを各OSのCIで実行する。ソースのみ公開し、macOS署名・公証・アプリバンドルやLinuxパッケージの生成・配布は対象外。追加OSの実機GUIは要確認。
