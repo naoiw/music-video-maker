@@ -33,9 +33,13 @@ impl Tool {
     }
 
     pub fn command(self) -> Command {
-        let mut command = Command::new(self.executable());
+        let command = Command::new(self.executable());
         #[cfg(windows)]
-        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let command = {
+            let mut command = command;
+            command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            command
+        };
         command
     }
 

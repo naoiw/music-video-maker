@@ -2,7 +2,7 @@
 
 ## 実行方法
 
-Node.js は .node-version、パッケージマネージャーは pnpm、Rust は stable、FFmpeg/FFprobe は PATH または実行ファイルと同じフォルダに配置する。FFmpeg 結合テストには libmp3lame、libx264、AAC、音声フィルタ、lavfi が必要。
+Node.js は .node-version、パッケージマネージャーは pnpm、Rust は stable、FFmpeg/FFprobe は PATH または実行ファイルと同じフォルダに配置する。FFmpeg 結合テストには libmp3lame、libx264、AAC、libopus、libvpx-vp9、libwebp、libwebp_anim、音声フィルタ、lavfi が必要。
 
 リポジトリルートで実行する。
 
@@ -67,3 +67,12 @@ Rust単体テストで相対座標の変換・範囲、不透明度、合成順�
 - 3秒のベースと異なる周期の2動画レイヤーを1.6秒の加工音に合成し、重なり順、各ループ周期、長い映像の切り詰めを確認する。音声は440 Hzの成分と不要な880/1320/1760 Hzの成分を数値評価する。
 - 実際のアニメーションWebPの明示拒否、無音GIFプロキシのフレーム変化・サイズ・ループ、音声のみ／映像のみのMP4、形式偽装・破損素材と再試行を確認する。
 - Windows実機のDPI・スクロール・素材選択・プレビュー再生は自動検証の対象外で、手動確認を別途行う。
+
+
+## macOS / Linux（#39）
+
+Windowsの既存CIを維持し、Ubuntu 24.04 x64、macOS 15 Apple Silicon / Intel のネイティブCIを追加する。各OSで同じフロントエンド・Rust・全FFmpeg結合テストを実行し、`bash -n`、`bash setup.sh --check`、`bash build.sh --skip-install`、固定lockfileを確認する。Linuxでは仮想ディスプレイ上でプロセス起動の簡易確認も実行する。OSのパッケージマネージャーからFFmpegを取得し、バイナリは配布・Artifact公開しない。
+
+macOSのGUI起動・ダイアログ・ドラッグ＆ドロップ、Linuxの実デスクトップでの描画・操作、FFmpeg検出、設定保存、試聴と動画生成の手動確認は別途必要。CI成功だけで実機GUIが確認済みとはしない。
+
+Ubuntu 24.04 の FFmpeg 6.1.1 では GIF の `-stream_loop` による可変フレーム遅延のループ時刻に差が出た。出力時は GIF のループ拡張だけを一時コピーで無限に正規化し、GIF demuxer の `-ignore_loop 0` を使用する。フレーム画像・遅延を変えないことを単体テストし、既存の9種のベース出力・3種の追加レイヤー結合テストと色・尺の判定条件を維持する。

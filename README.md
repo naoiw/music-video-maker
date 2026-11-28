@@ -1,10 +1,10 @@
 # Music Video Maker
 
-音声素材と1枚以上の画像・動画を合成し、音声フィルタで音質を調整して YouTube 向けの MP4 を生成する Windows 用ローカル GUI ツールです。Suno の楽曲にも対応します。素材は外部に送信しません。
+音声素材と1枚以上の画像・動画を合成し、音声フィルタで音質を調整して YouTube 向けの MP4 を生成する デスクトップ用ローカル GUI ツールです。Suno の楽曲にも対応します。素材は外部に送信しません。
 
 ## セットアップとビルド（Windows 10 / 11 x64）
 
-本リポジトリはソースコードのみを公開します。コンパイル済み exe・FFmpeg の配布は行いません。
+本リポジトリはソースコードのみを公開します。コンパイル済みバイナリ・インストーラー・FFmpeg の配布は行いません。
 
 1. GitHub の **Code → Download ZIP** でソースを取得し、すべて展開します（git clone でも可）。
 2. `setup.bat` をダブルクリックします。不足している Node.js 26、pnpm、C++ Build Tools、Rust、FFmpeg/FFprobe、WebView2 を WinGet 等で導入します。初回はネット接続が必要で、インストーラーや UAC の確認が出る場合があります。
@@ -16,6 +16,18 @@
 依存管理は pnpm を標準とし、コミット済みの `pnpm-lock.yaml` と `src-tauri/Cargo.lock` を使用します。build.bat と CI は固定 lockfile を使用し、pnpm の版は package.json で指定します。
 
 詳細な PowerShell 手順、エラー時の対処は [環境構築とビルド](docs/setup.md) を参照してください。
+
+## セットアップとビルド（macOS / Linux）
+
+macOS（Apple Silicon / Intel）、Ubuntu 24.04 x64 を初期の追加対象とします。Node.js 26 と rustup を事前に導入してください。macOS では Xcode Command Line Tools と Homebrew も必要です。
+
+```bash
+bash setup.sh
+bash build.sh
+bash run.sh
+```
+
+生成先は `src-tauri/target/release/music-video-maker` です。macOS・Linux ではシェルの PATH を引き継ぐためターミナルから起動してください。アプリバンドル・インストーラーは生成しません。詳細・Linux の他ディストリビューションに関する制約は [環境構築とビルド](docs/setup.md) を参照してください。
 
 ## 使い方
 
@@ -36,7 +48,7 @@
 - 出力・音声フィルタ設定の自動保存と復元、名前付きフィルタプリセット。
 - 生成進捗と中断、既存出力の保護、エラー時の対処方法と診断情報。
 
-対象は Windows 10 / 11 x64。音声入力は MP3 / PCM WAV / FLAC / AAC / M4A / MP4 / WebM / MOV / MKV（動画コンテナは音声トラックのみ、8～48 kHz、1～2ch）、映像入力は PNG / JPEG / GIF / 静止画 WebP / MP4 / WebM / MOV / MKV（動画コンテナは映像トラックのみ）です。動画は最大2 GiB、静止画・GIFは最大32 MiB、4000万画素以下。アニメーションWebPは未対応です。詳細・対応コーデックは[ユーザーガイド](docs/user-guide.md)を参照してください。
+対象は Windows 10 / 11 x64、macOS（Apple Silicon / Intel）、Ubuntu 24.04 x64（追加対象の実機 GUI は要確認）。音声入力は MP3 / PCM WAV / FLAC / AAC / M4A / MP4 / WebM / MOV / MKV（動画コンテナは音声トラックのみ、8～48 kHz、1～2ch）、映像入力は PNG / JPEG / GIF / 静止画 WebP / MP4 / WebM / MOV / MKV（動画コンテナは映像トラックのみ）です。動画は最大2 GiB、静止画・GIFは最大32 MiB、4000万画素以下。アニメーションWebPは未対応です。詳細・対応コーデックは[ユーザーガイド](docs/user-guide.md)を参照してください。
 
 ## 開発
 

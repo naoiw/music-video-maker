@@ -42,7 +42,7 @@ impl VisualKind {
 fn visual_input_args(path: &str, source: VisualKind, fps: &str) -> Vec<String> {
     let mut args = vec!["-protocol_whitelist", "file"];
     match source {
-        VisualKind::Gif => args.extend(["-f", "gif", "-ignore_loop", "1", "-stream_loop", "-1"]),
+        VisualKind::Gif => args.extend(["-f", "gif", "-ignore_loop", "0"]),
         VisualKind::Video => args.extend([
             "-format_whitelist",
             crate::visual::VIDEO_FORMATS,

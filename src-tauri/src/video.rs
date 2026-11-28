@@ -98,7 +98,7 @@ pub(crate) struct VideoInfo {
 const MAX_OVERLAYS: usize = 8;
 const COORDINATE_SCALE: u32 = 10_000;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct OverlayLayer {
     path: String,
@@ -272,11 +272,35 @@ pub(crate) fn encode_video(
     job.check_cancelled()?;
     let image = visual::inspect_visual(visual_path)?;
     let source = VisualKind::from_format(image.format)?;
+    // Keep temporary GIFs alive for the entire FFmpeg job. The original
+    // materials are never modified, and cancellation drops the private files.
+    let base_gif = if matches!(source, VisualKind::Gif) {
+        Some(visual::prepare_looping_gif(&image, parent)?)
+    } else {
+        None
+    };
+    let visual_path = match &base_gif {
+        Some(path) => path
+            .to_str()
+            .ok_or_else(|| "GIF の一時パスを処理できません。".to_owned())?,
+        None => visual_path,
+    };
+    let mut layer_copies = overlays.to_vec();
+    let mut gif_files = Vec::new();
     let mut prepared_overlays = Vec::with_capacity(overlays.len());
-    for layer in overlays {
+    for layer in &mut layer_copies {
         job.check_cancelled()?;
         let info = visual::inspect_visual(&layer.path)?;
-        prepared_overlays.push((layer, VisualKind::from_format(info.format)?));
+        let kind = VisualKind::from_format(info.format)?;
+        if matches!(kind, VisualKind::Gif) {
+            let temporary = visual::prepare_looping_gif(&info, parent)?;
+            layer.path = temporary
+                .to_str()
+                .ok_or_else(|| "GIF の一時パスを処理できません。".to_owned())?
+                .to_owned();
+            gif_files.push(temporary);
+        }
+        prepared_overlays.push((&*layer, kind));
     }
     // Static sources use the same precomposed PNG as their preview. Animated
     // sources bypass this step so both layers can retain every source frame.

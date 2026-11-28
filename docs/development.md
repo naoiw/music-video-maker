@@ -3,7 +3,7 @@
 ## ブランチ
 
 - main: 段階ごとに確認済みの安定版。初期構築・仕様・開発基盤は直接反映可。
-- develop: Windows版の機能統合・動作確認用。
+- develop: 各OSの機能統合・動作確認用。
 - feat/*, fix/*, refactor/*, docs/*, chore/*: develop を起点とする個別 Issue の作業ブランチ。
 
 ## 手順
@@ -24,7 +24,7 @@
 - #64: 画像配置の既定値改善（#24〜#40より優先、Phase 5開始前）
 - #24–#27: MVP のローカルビルド・総合検証（バイナリ配布は中止）
 
-#30 以降は MVP 完成後の Windows 版の拡張とする。個別作業ブランチ → develop の PR で CI を確認し、段階ごとにユーザー確認後に develop → main へ統合する。
+#30 以降は MVP 完成後の拡張とする。個別作業ブランチ → develop の PR で CI を確認し、段階ごとにユーザー確認後に develop → main へ統合する。
 
 ## 注意事項
 
@@ -37,11 +37,11 @@ Rust の依存クレートとビルド成果物は Swatinem/rust-cache でキャ
 src-tauri/Cargo.lock は Git 管理済みで、CI は --locked で検証する。
 キャッシュが存在しない場合も通常通りコンパイルする。
 
-- fmt、Clippy、単体テスト、FFmpeg 結合テスト、Windows 実行ファイル生成は従来通り必須の検証項目とする。
+- fmt、Clippy、単体テスト、FFmpeg 結合テスト、各OSのネイティブ実行ファイル生成を検証する。
 - PR のキャッシュは GitHub Actions の PR スコープに保存されるため、develop での初回実行でもキャッシュの作成が必要になる場合がある。
 - CI の成功後、キャッシュの復元ログと各ステップの時間を比較する。保存・復元の時間も含めて評価する。
 - フロントエンドの依存管理は pnpm を標準とし、`pnpm-lock.yaml` と `src-tauri/Cargo.lock` を Git で管理する。通常は `pnpm install --frozen-lockfile` と Cargo の `--locked` を使用する。依存更新時のみ lockfile を再生成し、差分を確認する。
-- package.json の packageManager に pnpm の版を固定する。CI、Tauri のフック、build.bat は pnpm に統一し、npm は setup.bat の pnpm 初回導入にのみ使用する。
+- package.json の packageManager に pnpm の版を固定する。CI、Tauri のフック、build.bat / build.sh は pnpm に統一し、npm は setup.bat / setup.sh の pnpm 初回導入にのみ使用する。
 - ローカルでのビルド・テストのみへの変更は、キャッシュの効果を確認後に判断する。
 
 Issue の自動クローズは同一リポジトリの develop 向けマージ済み PR のみを対象にし、PR のコードを実行しない。main 向け PR は GitHub 標準のクローズ機能を利用する。
