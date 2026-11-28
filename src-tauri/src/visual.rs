@@ -1,13 +1,15 @@
-use crate::errors;
+use crate::{errors, ffmpeg::Tool};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use image::{imageops, ImageFormat, ImageReader, Rgb, RgbImage};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::Path;
 
 const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: u64 = 40_000_000;
+const MAX_VIDEO_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub(crate) const VIDEO_FORMATS: &str = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,7 +19,7 @@ pub(crate) struct VisualInfo {
     mime_type: &'static str,
     width: u32,
     height: u32,
-    size_bytes: usize,
+    size_bytes: u64,
     preview_base64: String,
 }
 
@@ -73,13 +75,258 @@ fn inspect_image(name: String, expected: ImageFormat, bytes: &[u8]) -> Result<Vi
         mime_type,
         width,
         height,
-        size_bytes: bytes.len(),
+        size_bytes: bytes.len() as u64,
         preview_base64: STANDARD.encode(bytes),
     })
 }
 
 pub(crate) fn load_visual(path: &str) -> Result<VisualInfo, String> {
-    load_visual_inner(path).map_err(|error| errors::tagged("INPUT_IMAGE", error))
+    load_source(path, true).map_err(|error| errors::tagged("INPUT_IMAGE", error))
+}
+
+/// Export rechecks media metadata without generating an animated preview.
+pub(crate) fn inspect_visual(path: &str) -> Result<VisualInfo, String> {
+    load_source(path, false).map_err(|error| errors::tagged("INPUT_IMAGE", error))
+}
+
+fn load_source(path: &str, preview: bool) -> Result<VisualInfo, String> {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    match ext.as_str() {
+        "mp4" | "webm" | "mov" | "mkv" => load_video(path, &ext, preview),
+        "webp" => load_webp(path),
+        _ => load_visual_inner(path),
+    }
+}
+
+#[derive(Deserialize)]
+struct MediaProbe {
+    streams: Vec<MediaStream>,
+    format: MediaContainer,
+}
+
+#[derive(Deserialize)]
+struct MediaStream {
+    codec_name: String,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Deserialize)]
+struct MediaContainer {
+    format_name: String,
+}
+
+fn local_metadata(path: &str, limit: u64) -> Result<(String, u64), String> {
+    let input = Path::new(path);
+    if !input.is_absolute() {
+        return Err("ローカルの映像素材を指定してください。".into());
+    }
+    let metadata = input
+        .metadata()
+        .map_err(|error| errors::io_error("映像素材を開けません", &error, "INPUT_IMAGE"))?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > limit {
+        return Err("空・無効または容量上限を超える映像素材です。".into());
+    }
+    let name = input
+        .file_name()
+        .ok_or_else(|| "ファイル名を取得できません。".to_owned())?
+        .to_string_lossy()
+        .into_owned();
+    Ok((name, metadata.len()))
+}
+
+fn probe_visual(path: &str, whitelist: &str) -> Result<MediaProbe, String> {
+    let output = Tool::Ffprobe.run(&[
+        "-v",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-format_whitelist",
+        whitelist,
+        "-select_streams",
+        "V:0",
+        "-show_entries",
+        "stream=codec_name,width,height:format=format_name",
+        "-of",
+        "json",
+        "-i",
+        path,
+    ])?;
+    serde_json::from_slice(&output.stdout).map_err(|error| format!("FFprobe JSON: {error}"))
+}
+
+fn validate_stream(probe: &MediaProbe) -> Result<&MediaStream, String> {
+    let stream = probe
+        .streams
+        .first()
+        .ok_or_else(|| "映像ストリームがありません。".to_owned())?;
+    if !dimensions_are_supported(stream.width, stream.height) {
+        return Err("映像の寸法が無効、または 4000 万画素を超えています。".into());
+    }
+    Ok(stream)
+}
+
+fn load_video(path: &str, ext: &str, preview: bool) -> Result<VisualInfo, String> {
+    let (name, size_bytes) = local_metadata(path, MAX_VIDEO_BYTES)?;
+    let probe = probe_visual(path, VIDEO_FORMATS)?;
+    let stream = validate_stream(&probe)?;
+    let has = |name| probe.format.format_name.split(',').any(|part| part == name);
+    let format = match ext {
+        "mp4" | "mov"
+            if has("mov")
+                && matches!(
+                    stream.codec_name.as_str(),
+                    "h264" | "hevc" | "av1" | "mpeg4"
+                ) =>
+        {
+            if ext == "mov" {
+                "MOV"
+            } else {
+                "MP4"
+            }
+        }
+        "webm" if has("webm") && matches!(stream.codec_name.as_str(), "vp8" | "vp9" | "av1") => {
+            "WebM"
+        }
+        "mkv"
+            if has("matroska")
+                && matches!(
+                    stream.codec_name.as_str(),
+                    "h264" | "hevc" | "av1" | "vp8" | "vp9" | "mpeg4"
+                ) =>
+        {
+            "MKV"
+        }
+        _ => return Err("非対応の動画形式またはコーデックです。".into()),
+    };
+    // Use a short, silent, looping GIF proxy instead of exposing local paths
+    // or transferring the entire video through IPC. Export uses the original.
+    let preview_base64 = if preview {
+        let output = Tool::Ffmpeg.run(&[
+            "-v",
+            "error",
+            "-nostdin",
+            "-xerror",
+            "-protocol_whitelist",
+            "file",
+            "-format_whitelist",
+            VIDEO_FORMATS,
+            "-i",
+            path,
+            "-map",
+            "0:V:0",
+            "-an",
+            "-sn",
+            "-dn",
+            "-t",
+            "8",
+            "-vf",
+            "fps=10,scale=360:360:force_original_aspect_ratio=decrease",
+            "-loop",
+            "0",
+            "-f",
+            "gif",
+            "-",
+        ])?;
+        if output.stdout.is_empty() || output.stdout.len() > MAX_IMAGE_BYTES {
+            return Err("映像プレビューの容量が無効です。".into());
+        }
+        STANDARD.encode(output.stdout)
+    } else {
+        String::new()
+    };
+    Ok(VisualInfo {
+        name,
+        format,
+        mime_type: "image/gif",
+        width: stream.width,
+        height: stream.height,
+        size_bytes,
+        preview_base64,
+    })
+}
+
+fn is_animated_webp(bytes: &[u8]) -> bool {
+    // RIFF WebP extended header marks animation with bit 1 of VP8X.
+    // Scan chunk headers too, to reject malformed animation flags.
+    let mut offset = 12;
+    while let Some(header) = bytes.get(offset..offset + 8) {
+        let size = u32::from_le_bytes(header[4..8].try_into().unwrap_or_default()) as usize;
+        let tag = &header[..4];
+        if tag == b"ANIM"
+            || tag == b"ANMF"
+            || (tag == b"VP8X" && bytes.get(offset + 8).is_some_and(|flag| flag & 2 != 0))
+        {
+            return true;
+        }
+        let Some(next) = offset.checked_add(8 + size + (size & 1)) else {
+            break;
+        };
+        offset = next;
+    }
+    false
+}
+
+fn load_webp(path: &str) -> Result<VisualInfo, String> {
+    let (name, size_bytes) = local_metadata(path, MAX_IMAGE_BYTES as u64)?;
+    let mut bytes = Vec::new();
+    File::open(path)
+        .map_err(|error| errors::io_error("WebPを開けません", &error, "INPUT_IMAGE"))?
+        .take((MAX_IMAGE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| errors::io_error("WebPを読み込めません", &error, "INPUT_IMAGE"))?;
+    if bytes.len() > MAX_IMAGE_BYTES
+        || !bytes.starts_with(b"RIFF")
+        || bytes.get(8..12) != Some(b"WEBP".as_slice())
+    {
+        return Err("WebP の実際の形式が一致しません。".into());
+    }
+    if is_animated_webp(&bytes) {
+        return Err("アニメーション WebP は未対応です。GIF または動画を使用してください。".into());
+    }
+    let probe = probe_visual(path, "webp_pipe")?;
+    let stream = validate_stream(&probe)?;
+    if stream.codec_name != "webp" {
+        return Err("非対応の WebP です。".into());
+    }
+    // Always decode a frame, including during export validation.
+    // Reuse PNG for the static blurred preview/composition without new crates.
+    let output = Tool::Ffmpeg.run(&[
+        "-v",
+        "error",
+        "-nostdin",
+        "-xerror",
+        "-protocol_whitelist",
+        "file",
+        "-format_whitelist",
+        "webp_pipe",
+        "-i",
+        path,
+        "-map",
+        "0:v:0",
+        "-frames:v",
+        "1",
+        "-c:v",
+        "png",
+        "-f",
+        "image2pipe",
+        "-",
+    ])?;
+    let decoded = inspect_image(name, ImageFormat::Png, &output.stdout)?;
+    Ok(VisualInfo {
+        name: decoded.name,
+        format: "WebP",
+        mime_type: "image/png",
+        width: decoded.width,
+        height: decoded.height,
+        size_bytes,
+        // Static blur needs the decoded image for both preview and export.
+        preview_base64: decoded.preview_base64,
+    })
 }
 
 fn load_visual_inner(path: &str) -> Result<VisualInfo, String> {
@@ -106,6 +353,91 @@ fn load_visual_inner(path: &str) -> Result<VisualInfo, String> {
     inspect_image(name, format, &bytes)
 }
 
+// Use the GIF demuxer's own loop timing. Older FFmpeg versions can compute
+// an incorrect pass duration when looping variable-delay GIFs via stream_loop.
+const GIF_LOOP_EXTENSION: &[u8] = b"\x21\xff\x0bNETSCAPE2.0\x03\x01\x00\x00\x00";
+
+fn gif_color_table_len(packed: u8) -> usize {
+    if packed & 0x80 != 0 {
+        3 << (usize::from(packed & 7) + 1)
+    } else {
+        0
+    }
+}
+
+fn gif_sub_blocks_end(bytes: &[u8], mut offset: usize) -> Option<usize> {
+    loop {
+        let len = usize::from(*bytes.get(offset)?);
+        offset += 1;
+        if len == 0 {
+            return Some(offset);
+        }
+        bytes.get(offset..offset + len)?;
+        offset += len;
+    }
+}
+
+fn normalize_gif_loop(bytes: &[u8]) -> Option<Vec<u8>> {
+    if !matches!(bytes.get(..6), Some(b"GIF87a" | b"GIF89a")) {
+        return None;
+    }
+    let mut offset = 13 + gif_color_table_len(*bytes.get(10)?);
+    let mut output = bytes.get(..offset)?.to_vec();
+    output[..6].copy_from_slice(b"GIF89a");
+    output.extend_from_slice(GIF_LOOP_EXTENSION);
+    loop {
+        let start = offset;
+        let block = *bytes.get(offset)?;
+        match block {
+            0x21 => {
+                let extension = *bytes.get(offset + 1)?;
+                offset = gif_sub_blocks_end(bytes, offset + 2)?;
+                let is_loop = extension == 0xff
+                    && (bytes[start..offset].starts_with(b"\x21\xff\x0bNETSCAPE2.0")
+                        || bytes[start..offset].starts_with(b"\x21\xff\x0bANIMEXTS1.0"));
+                if is_loop {
+                    continue;
+                }
+            }
+            0x2c => {
+                // Image descriptor, optional local color table, LZW code size,
+                // and image data sub-blocks. Copy these bytes unchanged.
+                let packed = *bytes.get(offset + 9)?;
+                offset = gif_sub_blocks_end(bytes, offset + 11 + gif_color_table_len(packed))?;
+            }
+            0x3b => {
+                output.push(block);
+                return Some(output);
+            }
+            _ => return None,
+        }
+        output.extend_from_slice(bytes.get(start..offset)?);
+    }
+}
+
+pub(crate) fn prepare_looping_gif(
+    info: &VisualInfo,
+    parent: &Path,
+) -> Result<tempfile::TempPath, String> {
+    let bytes = STANDARD
+        .decode(&info.preview_base64)
+        .map_err(|error| errors::tagged("INPUT_IMAGE", error))?;
+    let normalized = normalize_gif_loop(&bytes)
+        .ok_or_else(|| errors::tagged("INPUT_IMAGE", "GIF のブロック構造が無効です。"))?;
+    let temporary = tempfile::Builder::new()
+        .prefix(".music-video-maker-gif-")
+        .suffix(".gif")
+        .tempfile_in(parent)
+        .map_err(|error| {
+            errors::io_error("GIF の一時ファイルを作成できません", &error, "OUTPUT_IO")
+        })?
+        .into_temp_path();
+    std::fs::write(&temporary, normalized).map_err(|error| {
+        errors::io_error("GIF の一時ファイルを書き込めません", &error, "OUTPUT_IO")
+    })?;
+    Ok(temporary)
+}
+
 // Compose a static image once, using the same pixels for preview and export.
 // Image formats with alpha are composited on black before resizing.
 pub(crate) fn blurred_image(
@@ -120,7 +452,7 @@ pub(crate) fn blurred_image(
         ));
     }
     let format = match info.format {
-        "PNG" => ImageFormat::Png,
+        "PNG" | "WebP" => ImageFormat::Png,
         "JPEG" => ImageFormat::Jpeg,
         "GIF" => ImageFormat::Gif,
         _ => return Err(errors::tagged("INPUT_IMAGE", "非対応の画像形式です。")),
@@ -203,6 +535,121 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_gif_repeat_without_reencoding_frames() {
+        use image::codecs::gif::{GifEncoder, Repeat};
+        use image::{AnimationDecoder, Delay, Frame, Rgba, RgbaImage};
+
+        for repeat in [None, Some(Repeat::Finite(1)), Some(Repeat::Infinite)] {
+            let mut bytes = Vec::new();
+            {
+                let mut encoder = GifEncoder::new(&mut bytes);
+                if let Some(repeat) = repeat {
+                    encoder.set_repeat(repeat).unwrap();
+                }
+                for (color, delay) in [([255, 0, 0, 255], 200), ([0, 0, 255, 255], 300)] {
+                    encoder
+                        .encode_frame(Frame::from_parts(
+                            RgbaImage::from_pixel(12, 8, Rgba(color)),
+                            0,
+                            0,
+                            Delay::from_numer_denom_ms(delay, 1),
+                        ))
+                        .unwrap();
+                }
+            }
+            let normalized = normalize_gif_loop(&bytes).unwrap();
+            assert_eq!(
+                normalized
+                    .windows(GIF_LOOP_EXTENSION.len())
+                    .filter(|window| *window == GIF_LOOP_EXTENSION)
+                    .count(),
+                1
+            );
+            assert_eq!(normalize_gif_loop(&normalized).unwrap(), normalized);
+            let frames = |data: &[u8]| {
+                image::codecs::gif::GifDecoder::new(Cursor::new(data))
+                    .unwrap()
+                    .into_frames()
+                    .collect_frames()
+                    .unwrap()
+            };
+            let original = frames(&bytes);
+            let prepared = frames(&normalized);
+            assert_eq!(original.len(), prepared.len());
+            for (left, right) in original.iter().zip(&prepared) {
+                assert_eq!(left.buffer(), right.buffer());
+                assert_eq!(left.delay(), right.delay());
+            }
+            assert!(normalize_gif_loop(&bytes[..bytes.len() - 1]).is_none());
+        }
+    }
+
+    #[test]
+    fn rejects_animated_webp_flags_and_chunks() {
+        assert!(is_animated_webp(b"RIFF0000WEBPVP8X\x0a\x00\x00\x00\x02"));
+        assert!(is_animated_webp(b"RIFF0000WEBPANIM\x06\x00\x00\x00"));
+        assert!(is_animated_webp(b"RIFF0000WEBPANMF\x10\x00\x00\x00"));
+        assert!(!is_animated_webp(b"RIFF0000WEBPVP8X\x0a\x00\x00\x00\x10"));
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with libwebp_anim, libx264 and FFprobe"]
+    fn distinguishes_animated_webp_and_returns_silent_gif_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let webp = dir.path().join("animated.webp");
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=160x90:r=10:d=1",
+                "-c:v",
+                "libwebp_anim",
+                webp.to_str().unwrap(),
+            ])
+            .unwrap();
+        let error = load_visual(webp.to_str().unwrap()).unwrap_err();
+        assert!(error.contains("アニメーション WebP は未対応"));
+
+        let video = dir.path().join("preview.mp4");
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=640x360:r=10:d=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=880:duration=1",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                video.to_str().unwrap(),
+            ])
+            .unwrap();
+        let info = load_visual(video.to_str().unwrap()).unwrap();
+        assert_eq!(info.mime_type, "image/gif");
+        assert_eq!((info.width, info.height), (640, 360));
+        let bytes = STANDARD.decode(info.preview_base64).unwrap();
+        assert!(bytes.starts_with(b"GIF89a"));
+        assert!(bytes.windows(11).any(|window| window == b"NETSCAPE2.0"));
+        use image::AnimationDecoder;
+        let decoder = image::codecs::gif::GifDecoder::new(Cursor::new(bytes)).unwrap();
+        let frames = decoder.into_frames().collect_frames().unwrap();
+        assert!(frames.len() > 1);
+        assert!(frames.len() <= 80);
+        assert!(frames[0].buffer().width() <= 360);
+        assert!(frames[0].buffer().height() <= 360);
+        assert_ne!(frames[0].buffer(), frames.last().unwrap().buffer());
+    }
+
+    #[test]
     fn reads_supported_image_formats() {
         for (format, label, mime) in [
             (ImageFormat::Png, "PNG", "image/png"),
@@ -215,7 +662,7 @@ mod tests {
             assert_eq!(info.format, label);
             assert_eq!(info.mime_type, mime);
             assert_eq!((info.width, info.height), (12, 8));
-            assert_eq!(info.size_bytes, bytes.len());
+            assert_eq!(info.size_bytes, bytes.len() as u64);
             assert_eq!(STANDARD.decode(info.preview_base64).unwrap(), bytes);
         }
     }

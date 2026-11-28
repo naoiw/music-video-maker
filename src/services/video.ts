@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import type { FilterChain } from "./audio-filters";
+import type { OverlayLayer } from "./layers";
 
 import type { OutputSettings } from "./settings-schema";
 export type { OutputSettings } from "./settings-schema";
@@ -33,8 +34,9 @@ export async function encodeVideo(
   settings: OutputSettings,
   filters: FilterChain,
   jobId: number,
+  overlays: OverlayLayer[] = [],
 ): Promise<VideoInfo> {
-  return invoke<VideoInfo>("encode_video", { audioPath, visualPath, outputPath, settings, filters, jobId });
+  return invoke<VideoInfo>("encode_video", { audioPath, visualPath, outputPath, settings, filters, jobId, overlays });
 }
 
 export function getEncodeProgress(jobId: number): Promise<EncodeProgress | null> {

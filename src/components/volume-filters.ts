@@ -89,7 +89,7 @@ export function initializeVolumeFilters(available: boolean): () => void {
       if (current !== revision) return;
       const warning = gainEnabled.checked && gain.valueAsNumber > 0 && !limiterEnabled.checked
         ? " · ピーク保護なし（クリッピングに注意）" : "";
-      status.textContent = `設定有効${warning}${audio ? "" : " · MP3を選択してください。"}`;
+      status.textContent = `設定有効${warning}${audio ? "" : " · 音声素材を選択してください。"}`;
     } catch (error) {
       if (current !== revision) return;
       status.textContent = reportError("filter", error);

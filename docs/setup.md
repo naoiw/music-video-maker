@@ -1,4 +1,6 @@
-# Windows の環境構築とビルド
+# 環境構築とビルド
+
+## Windows
 
 対象は Windows 10 / 11 x64。ソースのみ公開し、各利用者がビルドする。インストーラー・コンパイル済み exe・FFmpeg の配布は行わない。初回にはインターネット接続、十分な空き容量、インストーラーに応じた管理者権限が必要。
 
@@ -56,3 +58,37 @@ pnpm run desktop:dev
 ```
 
 ブラウザで UI のみ確認する場合は pnpm run dev。ネイティブ処理は利用できない。テストは [テスト・検証](testing.md) を参照。ビルドキャッシュは target に保持されるため毎回削除する必要はない。`pnpm-lock.yaml` と `src-tauri/Cargo.lock` は Git 管理済み。依存関係を意図的に変更する場合以外は lockfile を更新しない。
+
+
+## macOS / Linux（#39）
+
+ソースから各自のOS・CPU向けにネイティブビルドする。macOS Apple Silicon / Intel と Ubuntu 24.04 x64 をCI対象とする。Linux ARM64 や他のDebian系でも同じスクリプトを利用できる可能性があるが、動作保証はしない。他ディストリビューションでは Tauri の事前準備を参考にネイティブ依存を手動導入し、`bash setup.sh --check` で確認する。署名・公証、.app、DMG、deb、AppImage、バイナリ配布は対象外。
+
+### 共通の事前準備
+
+- [Node.js](https://nodejs.org/) の26系（.node-version）とnpm、[rustup](https://rustup.rs/) をユーザー自身で導入し、ターミナルで利用できるようにする。既存の Node を自動置換しない。
+- macOS では `xcode-select --install` でCommand Line Toolsを導入し、[Homebrew](https://brew.sh/) を利用可能にする。
+- Ubuntu では apt と sudo が利用できるデスクトップ環境を用意する。
+- リポジトリを clone または ZIP 展開し、ターミナルでそのディレクトリへ移動する。
+
+```bash
+bash setup.sh
+bash build.sh
+bash run.sh
+```
+
+setup.sh は macOS で必要な場合に Homebrew の ffmpeg-full を導入する。Linux では apt で WebKitGTK 4.1、GTK3、C/C++ ツール、OpenSSL、libxdo、libayatana-appindicator、librsvg、FFmpeg 等を導入する。未導入の Rust stable と固定 pnpm を準備し、ツール・コーデック・フィルタを確認する。既存 pnpm の版が異なる場合は勝手に変更せず停止する。OS のパッケージを変更しない確認だけなら `bash setup.sh --check` を実行する。
+
+build.sh は pnpm install --frozen-lockfile、Tauri --no-bundle、Cargo --locked を利用し、`src-tauri/target/release/music-video-maker` を生成する。`--skip-install` は事前に依存を固定 lockfile で導入済みの場合のみ使う。run.sh は Cargo / Homebrew の PATH を補って実行する。スクリプトを bash から実行するので ZIP 展開時の実行ビットにも依存しない。アプリの起動にはデスクトップ環境が必要。
+
+macOS では必要に応じて `brew install ffmpeg-full` と `export PATH="$(brew --prefix ffmpeg-full)/bin:$PATH"` を利用する。Linux ではディストリビューションの FFmpeg が必要な機能を含まない場合は別途フル機能の FFmpeg / FFprobe を用意する。
+
+### 開発用起動
+
+```bash
+bash setup.sh --check
+pnpm install --frozen-lockfile
+RUSTUP_TOOLCHAIN=stable pnpm run desktop:dev
+```
+
+Homebrew の ffmpeg-full を使う場合は上記 PATH 設定を先に行う。参照: [Tauri事前準備](https://v2.tauri.app/ja/start/prerequisites/)、[Homebrew ffmpeg-full](https://formulae.brew.sh/formula/ffmpeg-full)。

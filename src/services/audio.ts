@@ -13,13 +13,13 @@ export interface AudioSource {
 export async function selectAudio(): Promise<AudioSource | null> {
   if (!isTauri()) return null;
   const path = await open({
-    title: "MP3 音声ファイルを選択",
+    title: "音声素材を選択",
     multiple: false,
     directory: false,
-    filters: [{ name: "MP3", extensions: ["mp3"] }],
+    filters: [{ name: "音声・動画", extensions: ["mp3", "wav", "flac", "aac", "m4a", "mp4", "webm", "mov", "mkv"] }],
   });
   if (path === null) return null;
-  if (typeof path !== "string") throw new Error("MP3を1ファイル選択してください。");
+  if (typeof path !== "string") throw new Error("音声素材を1ファイル選択してください。");
 
   return loadAudio(path);
 }

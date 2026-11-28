@@ -85,7 +85,7 @@ export function initializeAudioFilters(available: boolean): () => void {
       if (current !== revision) return;
       status!.textContent = audio
         ? "設定有効（FFTノイズ除去）"
-        : "設定有効 · MP3を選択してください。";
+        : "設定有効 · 音声素材を選択してください。";
     } catch (error) {
       if (current !== revision) return;
       status!.textContent = reportError("filter", error);

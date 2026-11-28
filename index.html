@@ -11,17 +11,22 @@
     <div class="column">
       <section class="panel" aria-labelledby="source-title">
         <h2 id="source-title">素材</h2>
-        <p id="source-drop-hint" class="muted" hidden>MP3・画像をウィンドウ内にドラッグ＆ドロップ</p>
+        <p id="source-drop-hint" class="muted" hidden>素材を使用したいエリアに1ファイルずつドラッグ＆ドロップ</p>
         <p id="source-drop-status" class="muted" role="status"></p>
-        <div class="source"><div><h3>音声</h3><p id="audio-name">MP3 · 未選択</p><p id="audio-details"></p><p id="audio-status" role="status"></p></div><button type="button" id="select-audio" disabled>選択</button></div>
-        <div class="source"><div><h3>画像</h3><p id="visual-name">PNG / JPEG / GIF · 未選択</p><p id="visual-details"></p><p id="visual-status" role="status"></p></div><button type="button" id="select-visual" disabled>選択</button></div>
+        <div class="source" data-drop-target="audio"><div><h3>音声素材</h3><p id="audio-name">MP3 / WAV / FLAC / AAC / M4A / MP4 / WebM / MOV / MKV · 未選択</p><p id="audio-details"></p><p id="audio-status" role="status"></p></div><button type="button" id="select-audio" disabled>選択</button></div>
+        <div class="source" data-drop-target="visual"><div><h3>ベース映像素材</h3><p id="visual-name">PNG / JPEG / GIF / WebP / MP4 / WebM / MOV / MKV · 未選択</p><p id="visual-details"></p><p id="visual-status" role="status"></p></div><button type="button" id="select-visual" disabled>選択</button></div>
+        <fieldset id="overlay-editor" disabled>
+          <div class="source" data-drop-target="overlay"><div><h3>追加レイヤー</h3><p>最大8枚 · 上が最前面</p></div><button type="button" id="add-overlay">追加</button></div>
+          <div id="overlay-list"></div>
+          <p id="overlay-status" class="muted" role="status"></p>
+        </fieldset>
       </section>
       <section class="panel" aria-labelledby="settings-title">
         <h2 id="settings-title">出力設定</h2>
         <fieldset id="output-settings" disabled>
           <div class="fields"><label>解像度<select id="resolution"><option value="1920x1080">1920 × 1080 (16:9)</option><option value="1080x1080">1080 × 1080 (1:1)</option><option value="1080x1920">1080 × 1920 (9:16)</option></select></label>
           <label>フレームレート<select id="fps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></label>
-          <label>画像配置<select id="fit"><option value="blurred" selected>中央80%・ぼかし背景</option><option value="contain">全体表示（余白）</option><option value="cover">画面いっぱい（切り抜き）</option></select></label>
+          <label>ベース映像素材配置<select id="fit"><option value="blurred" selected>中央80%・ぼかし背景</option><option value="contain">全体表示（余白）</option><option value="cover">画面いっぱい（切り抜き）</option></select></label>
           <label>映像品質<select id="quality"><option value="16">高画質 (CRF 16)</option><option value="20" selected>標準 (CRF 20)</option><option value="24">容量優先 (CRF 24)</option></select></label>
           <label>形式<input value="MP4 · H.264 / AAC" readonly /></label></div>
         </fieldset>
@@ -98,14 +103,14 @@
     <div class="column">
       <section class="panel" aria-labelledby="preview-title">
         <h2 id="preview-title">プレビュー</h2>
-        <div id="visual-preview" class="preview"><span>画像が選択されていません</span></div>
+        <div id="visual-preview" class="preview"><div id="visual-preview-base" class="preview-base"><span>映像素材が選択されていません</span></div><div id="overlay-preview" class="overlay-preview"></div></div>
         <div class="audio-preview">
           <h3>音声の試聴・比較</h3>
           <label for="preview-start">試聴区間（最大30秒） <output id="preview-range" for="preview-start">未選択</output></label>
           <input id="preview-start" type="range" min="0" max="0" step="1" value="0" disabled />
           <div class="preview-controls"><button disabled type="button" id="preview-original" aria-pressed="false">原音</button><button disabled type="button" id="preview-processed" aria-pressed="false">加工音</button></div>
           <audio id="audio-preview" controls preload="metadata" aria-label="音声プレビュー"></audio>
-          <p id="audio-preview-status" class="muted" role="status">MP3を選択してください。</p>
+          <p id="audio-preview-status" class="muted" role="status">音声素材を選択してください。</p>
         </div>
       </section>
       <section class="panel" aria-labelledby="export-title">

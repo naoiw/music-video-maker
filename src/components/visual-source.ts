@@ -1,5 +1,6 @@
 import { reportError } from "./diagnostics";
-import { loadVisual, renderBlurredPreview, selectVisual, type VisualSource } from "../services/visual";
+import { renderBlurredPreview, type VisualSource } from "../services/visual";
+import { loadVisualPreview } from "./visual-preview";
 import type { OutputSettings } from "../services/video";
 
 let selectedVisual: VisualSource | null = null;
@@ -55,7 +56,7 @@ function animatedBlurredPreview(image: HTMLImageElement, source: VisualSource, s
 
 /** Use exact native composition for static images and live playback for GIFs. */
 export function refreshVisualPreview(settings: OutputSettings): void {
-  const preview = document.getElementById("visual-preview");
+  const preview = document.getElementById("visual-preview-base");
   if (!preview || !selectedVisual || !originalImage) return;
   const key = `${sourceRevision}:${settings.width}x${settings.height}:${settings.fit}`;
   if (key === requestedKey) return;
@@ -65,7 +66,7 @@ export function refreshVisualPreview(settings: OutputSettings): void {
     if (preview.firstElementChild !== originalImage) preview.replaceChildren(originalImage);
     return;
   }
-  if (selectedVisual.format === "GIF") {
+  if (["GIF", "MP4", "WebM", "MOV", "MKV"].includes(selectedVisual.format)) {
     pending = null;
     preview.replaceChildren(animatedBlurredPreview(originalImage, selectedVisual, settings));
     return;
@@ -84,7 +85,7 @@ export function initializeVisualSource(onChange: () => void = () => {}): (path?:
   const name = document.querySelector<HTMLElement>("#visual-name");
   const details = document.querySelector<HTMLElement>("#visual-details");
   const status = document.querySelector<HTMLElement>("#visual-status");
-  const preview = document.querySelector<HTMLElement>("#visual-preview");
+  const preview = document.querySelector<HTMLElement>("#visual-preview-base");
   if (!button || !name || !details || !status || !preview) {
     throw new Error("Missing visual source elements");
   }
@@ -94,19 +95,14 @@ export function initializeVisualSource(onChange: () => void = () => {}): (path?:
     if (button.disabled) return;
     button.disabled = true;
     onChange();
-    status.textContent = "画像を確認しています…";
+    status.textContent = "映像素材を確認しています…";
     try {
-      const selection = (path === undefined ? await selectVisual() : await loadVisual(path));
+      const selection = await loadVisualPreview("preview-image", path);
       if (!selection) {
         status.textContent = "";
         return;
       }
-      const { source, previewUrl } = selection;
-      const image = new Image();
-      image.alt = source.name;
-      image.className = "preview-image";
-      image.src = previewUrl;
-      await image.decode();
+      const { source, image } = selection;
 
       // Keep the previous valid selection until both metadata and preview succeed.
       preview.replaceChildren(image);

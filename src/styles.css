@@ -77,7 +77,7 @@ summary { cursor: pointer; }
 .audio-preview button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
 
 /* Native file drop feedback (the entire desktop window accepts files). */
-.panel[data-drop-active="true"] { outline: 2px dashed currentColor; outline-offset: -5px; }
+.source[data-drop-active="true"] { outline: 2px dashed currentColor; outline-offset: -5px; }
 
 .preset-controls { display: grid; gap: 6px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .preset-controls label { font-size: 12px; }
@@ -87,3 +87,15 @@ summary { cursor: pointer; }
 #diagnostics { margin-top: 12px; }
 #diagnostic-list section { margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
 #diagnostic-list pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; margin: 6px 0 0; user-select: text; }
+
+/* Separate base and overlays so asynchronous base updates cannot erase layers. */
+.preview-base, .overlay-preview { position: absolute; inset: 0; overflow: hidden; }
+.preview-base { display: grid; place-items: center; }
+.overlay-preview { pointer-events: none; isolation: isolate; }
+.overlay-image { position: absolute; object-fit: contain; }
+#overlay-editor { border-top: 1px solid var(--border); }
+.overlay-row { border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-top: 8px; }
+.overlay-row h3 { overflow-wrap: anywhere; }
+.overlay-row .actions { margin: 6px 0 10px; }
+.overlay-row button { font-size: 12px; padding: 4px 8px; }
+.overlay-row[data-invalid="true"] { border-color: light-dark(#b91c1c, #fca5a5); }

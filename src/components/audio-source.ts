@@ -31,7 +31,7 @@ export function initializeAudioSource(onChange: () => void = () => {}): (path?: 
     if (button.disabled) return;
     button.disabled = true;
     onChange();
-    status.textContent = "MP3を確認しています…";
+    status.textContent = "音声素材を確認しています…";
 
     try {
       const source = (path === undefined ? await selectAudio() : await loadAudio(path));
