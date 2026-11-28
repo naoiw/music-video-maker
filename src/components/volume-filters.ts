@@ -2,7 +2,14 @@ import { reportError } from "./diagnostics";
 import { compileAudioFilters, type FilterChain } from "../services/audio-filters";
 import { getSelectedAudio } from "./audio-source";
 
-const defaults = { gainDb: 0, targetLufs: -14, truePeakDb: -1.5, ceilingDb: -1 };
+import { settingsFields } from "../services/settings-schema";
+
+const defaults = {
+  gainDb: settingsFields["volume-gain"].initial,
+  targetLufs: settingsFields["loudness-target"].initial,
+  truePeakDb: settingsFields["loudness-peak"].initial,
+  ceilingDb: settingsFields["limiter-ceiling"].initial,
+};
 
 let filters: FilterChain = [
   { enabled: false, filter: { kind: "gain", gainDb: defaults.gainDb } },

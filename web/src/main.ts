@@ -9,8 +9,9 @@ import type { SettingsValues } from "../../src/services/settings-schema";
 import { prepareLoopingGif } from "./gif-loop";
 import { inspectImageDimensions, assertImageDimensions } from "./image-dimensions";
 import { initializeWebAudioFilters } from "./audio-filter-panel";
-import { settingsFields } from "../../src/services/settings-schema";
-import { assertInputs, encodeArgs, imageKind, LIMITS, browserOutputDefaults, browserResolutions, type Resolution, type Fit } from "./encode-plan";
+import { settingsFields, outputIds } from "../../src/services/settings-schema";
+import { applySettingControls, readSettingControls } from "../../src/services/settings-controls";
+import { assertInputs, encodeArgs, imageKind, LIMITS, browserResolutions, type Resolution, type Fit } from "./encode-plan";
 
 function get<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -111,16 +112,13 @@ fit.addEventListener("change", () => { clearOutput(); refreshPreview(); persistS
 resolution.addEventListener("change", () => { clearOutput(); refreshPreview(); persistSettings(); });
 for (const el of [fps,quality]) el.addEventListener("change", () => { clearOutput(); persistSettings(); });
 function resetOutputSettings() {
-  resolution.value = browserOutputDefaults.resolution;
-  fit.value = browserOutputDefaults.fit;
-  fps.value = String(browserOutputDefaults.fps);
-  quality.value = String(browserOutputDefaults.crf);
+  applySettingControls(defaultWebSettings(),outputIds);
   refreshPreview();
 }
 function persistSettings() {
   let values: SettingsValues;
   try {
-    values={...filters.snapshot(), resolution:resolution.value, fps:fps.value, fit:fit.value, quality:quality.value};
+    values={...filters.snapshot(), ...readSettingControls(outputIds)} as SettingsValues;
   } catch {
     settingsStatus.textContent="無効な設定値があるため、最後に保存した有効な設定を保持します。";
     return;
@@ -141,10 +139,7 @@ function restoreSettings() {
   } catch {
     settingsStatus.textContent="保存設定を読み込めないため、初期設定を使用します。";
   }
-  resolution.value=String(values.resolution);
-  fps.value=String(values.fps);
-  fit.value=String(values.fit);
-  quality.value=String(values.quality);
+  applySettingControls(values,outputIds);
   filters.apply(Object.fromEntries(filterIds.map(id=>[id,values[id]])),false);
   refreshPreview();
 }

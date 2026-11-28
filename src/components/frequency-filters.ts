@@ -2,7 +2,15 @@ import { reportError } from "./diagnostics";
 import { compileAudioFilters, type FilterChain } from "../services/audio-filters";
 import { getSelectedAudio } from "./audio-source";
 
-const defaults = { highPassHz: 80, lowPassHz: 12_000, eqHz: 1000, q: 1, gainDb: 0 };
+import { settingsFields } from "../services/settings-schema";
+
+const defaults = {
+  highPassHz: settingsFields["highpass-hz"].initial,
+  lowPassHz: settingsFields["lowpass-hz"].initial,
+  eqHz: settingsFields["eq-hz"].initial,
+  q: settingsFields["eq-q"].initial,
+  gainDb: settingsFields["eq-gain"].initial,
+};
 
 let filters: FilterChain = [
   { enabled: false, filter: { kind: "highPass", frequencyHz: defaults.highPassHz } },
@@ -43,7 +51,7 @@ export function initializeFrequencyFilters(available: boolean): () => void {
     const current = ++revision;
     const audio = getSelectedAudio();
     const sampleRate = audio?.sampleRate ?? 48_000;
-    const maxHz = Math.min(20_000, Math.ceil(sampleRate / 2) - 1);
+    const maxHz = Math.min(settingsFields["highpass-hz"].max, Math.ceil(sampleRate / 2) - 1);
     for (const input of [high, low, center]) input.max = String(maxHz);
     highParameters.disabled = !available || !highEnabled.checked;
     lowParameters.disabled = !available || !lowEnabled.checked;
@@ -94,7 +102,7 @@ export function initializeFrequencyFilters(available: boolean): () => void {
   for (const input of [highEnabled, lowEnabled, eqEnabled]) input.addEventListener("change", update);
   for (const input of [high, low, center, q, gain]) input.addEventListener("input", update);
   reset.addEventListener("click", () => {
-    const maxHz = Math.min(20_000, Math.ceil((getSelectedAudio()?.sampleRate ?? 48_000) / 2) - 1);
+    const maxHz = Math.min(settingsFields["highpass-hz"].max, Math.ceil((getSelectedAudio()?.sampleRate ?? 48_000) / 2) - 1);
     high.value = String(Math.min(defaults.highPassHz, maxHz));
     low.value = String(Math.min(defaults.lowPassHz, maxHz));
     center.value = String(Math.min(defaults.eqHz, maxHz));
