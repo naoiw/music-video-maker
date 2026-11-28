@@ -97,7 +97,7 @@ export function initializeExport(
     let errorMessage: string | null = null;
     try {
       const audio = getSelectedAudio();
-      const path = await selectOutput(audio ? audio.name.replace(/\.mp3$/i, ".mp4") : "music-video.mp4");
+      const path = await selectOutput(audio ? audio.name.replace(/\.[^.]+$/, ".mp4") : "music-video.mp4");
       if (path) {
         outputPath = path.toLowerCase().endsWith(".mp4") ? path : `${path}.mp4`;
         outputName.textContent = outputPath;

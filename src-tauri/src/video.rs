@@ -176,8 +176,8 @@ fn prepare_audio(
             "-y",
             "-protocol_whitelist",
             "file",
-            "-f",
-            "mp3",
+            "-format_whitelist",
+            audio::AUDIO_FORMATS,
             "-i",
             audio_path,
             "-map",
@@ -270,19 +270,17 @@ pub(crate) fn encode_video(
         .map_err(|error| crate::errors::tagged("FILTER", error))?;
     job.set_duration(audio_info.duration_seconds);
     job.check_cancelled()?;
-    let image = visual::load_visual(visual_path)?;
+    let image = visual::inspect_visual(visual_path)?;
     let source = VisualKind::from_format(image.format)?;
     let mut prepared_overlays = Vec::with_capacity(overlays.len());
     for layer in overlays {
         job.check_cancelled()?;
-        let info = visual::load_visual(&layer.path)?;
+        let info = visual::inspect_visual(&layer.path)?;
         prepared_overlays.push((layer, VisualKind::from_format(info.format)?));
     }
     // Static sources use the same precomposed PNG as their preview. Animated
-    // GIFs bypass this step so both layers can retain every source frame.
-    let composed = if matches!(settings.fit, ImageFit::Blurred)
-        && !matches!(source, VisualKind::Gif)
-    {
+    // sources bypass this step so both layers can retain every source frame.
+    let composed = if matches!(settings.fit, ImageFit::Blurred) && !source.is_animated() {
         let canvas = visual::blurred_image(&image, settings.width, settings.height)?;
         let directory = tempfile::Builder::new()
             .prefix(".music-video-maker-image-")

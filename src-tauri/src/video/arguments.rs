@@ -7,14 +7,30 @@ pub(super) enum VisualKind {
     Png,
     Jpeg,
     Gif,
+    WebP,
+    Video,
 }
 
 impl VisualKind {
+    pub(super) fn is_animated(self) -> bool {
+        matches!(self, Self::Gif | Self::Video)
+    }
+
+    fn stream(self) -> &'static str {
+        if matches!(self, Self::Video) {
+            "V:0"
+        } else {
+            "v:0"
+        }
+    }
+
     pub(super) fn from_format(format: &str) -> Result<Self, String> {
         match format {
             "PNG" => Ok(Self::Png),
             "JPEG" => Ok(Self::Jpeg),
             "GIF" => Ok(Self::Gif),
+            "WebP" => Ok(Self::WebP),
+            "MP4" | "WebM" | "MOV" | "MKV" => Ok(Self::Video),
             _ => Err(crate::errors::tagged(
                 "INPUT_IMAGE",
                 "非対応の画像形式です。",
@@ -27,9 +43,16 @@ fn visual_input_args(path: &str, source: VisualKind, fps: &str) -> Vec<String> {
     let mut args = vec!["-protocol_whitelist", "file"];
     match source {
         VisualKind::Gif => args.extend(["-f", "gif", "-ignore_loop", "1", "-stream_loop", "-1"]),
-        VisualKind::Png | VisualKind::Jpeg => {
+        VisualKind::Video => args.extend([
+            "-format_whitelist",
+            crate::visual::VIDEO_FORMATS,
+            "-stream_loop",
+            "-1",
+        ]),
+        VisualKind::Png | VisualKind::Jpeg | VisualKind::WebP => {
             let codec = match source {
                 VisualKind::Png => "png",
+                VisualKind::WebP => "webp",
                 _ => "mjpeg",
             };
             args.extend([
@@ -52,22 +75,33 @@ fn visual_input_args(path: &str, source: VisualKind, fps: &str) -> Vec<String> {
 
 fn layered_filter(
     base_filter: &str,
+    source: VisualKind,
     overlays: &[(&OverlayLayer, VisualKind)],
     settings: OutputSettings,
 ) -> (String, String) {
     // Normalize the base cadence before framesync so a slow GIF background
     // does not limit the update rate of foreground animations.
     let fps = settings.fps;
-    let mut graph = format!("[0:v]{base_filter},fps={fps},setpts=PTS-STARTPTS[base]");
+    let stream = if matches!(source, VisualKind::Video) {
+        "V:0"
+    } else {
+        "v"
+    };
+    let mut graph = format!("[0:{stream}]{base_filter},fps={fps},setpts=PTS-STARTPTS[base]");
     let mut previous = "base".to_owned();
-    for (index, (layer, _)) in overlays.iter().enumerate() {
+    for (index, (layer, kind)) in overlays.iter().enumerate() {
         let input = index + 2; // 0: base visual, 1: audio.
+        let stream = if matches!(kind, VisualKind::Video) {
+            "V:0"
+        } else {
+            "v"
+        };
         let (x, y, width, height) = layer.pixel_rect(settings);
         let alpha = f64::from(layer.opacity) / 100.0;
         use std::fmt::Write;
         write!(
             graph,
-            ";[{input}:v]setpts=PTS-STARTPTS,format=rgba,\
+            ";[{input}:{stream}]setpts=PTS-STARTPTS,format=rgba,\
              scale=w='max(1,min({width},iw*{height}/ih))':\
              h='max(1,min({height},ih*{width}/iw))',setsar=1,\
              colorchannelmixer=aa={alpha}[layer{index}];\
@@ -91,7 +125,7 @@ pub(super) fn encoder_args(
 ) -> Vec<String> {
     let fps = settings.fps.to_string();
     let crf = settings.crf.to_string();
-    let filter = if matches!(source, VisualKind::Gif) && matches!(settings.fit, ImageFit::Blurred) {
+    let filter = if source.is_animated() && matches!(settings.fit, ImageFit::Blurred) {
         settings.animated_blurred_filter()
     } else {
         settings.filter()
@@ -115,11 +149,15 @@ pub(super) fn encoder_args(
         [
             "-protocol_whitelist",
             "file",
-            "-f",
+            if filtered_duration.is_some() {
+                "-f"
+            } else {
+                "-format_whitelist"
+            },
             if filtered_duration.is_some() {
                 "wav"
             } else {
-                "mp3"
+                crate::audio::AUDIO_FORMATS
             },
             "-i",
             audio_path,
@@ -128,8 +166,9 @@ pub(super) fn encoder_args(
         .map(str::to_owned),
     );
     if overlays.is_empty() {
+        let map = format!("0:{}", source.stream());
         args.extend(
-            ["-map", "0:v:0", "-vf", &filter]
+            ["-map", &map, "-vf", &filter]
                 .into_iter()
                 .map(str::to_owned),
         );
@@ -137,7 +176,7 @@ pub(super) fn encoder_args(
         for (layer, kind) in overlays {
             args.extend(visual_input_args(&layer.path, *kind, &fps));
         }
-        let (graph, output) = layered_filter(&filter, overlays, settings);
+        let (graph, output) = layered_filter(&filter, source, overlays, settings);
         args.extend([
             "-filter_complex_threads".into(),
             "1".into(),
