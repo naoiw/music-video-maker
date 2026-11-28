@@ -132,7 +132,6 @@ pub(super) fn encoder_args(
     overlays: &[(&OverlayLayer, VisualKind)],
 ) -> Vec<String> {
     let fps = settings.fps.to_string();
-    let crf = settings.crf.to_string();
     let filter = if source.is_animated() && matches!(settings.fit, ImageFit::Blurred) {
         settings.animated_blurred_filter()
     } else {
@@ -207,19 +206,13 @@ pub(super) fn encoder_args(
         ]);
     }
     args.extend(
+        ["-map", "1:a:0", "-map_metadata", "-1"]
+            .into_iter()
+            .map(str::to_owned),
+    );
+    args.extend(settings.encoder.args(settings.crf, settings.fps));
+    args.extend(
         [
-            "-map",
-            "1:a:0",
-            "-map_metadata",
-            "-1",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "medium",
-            "-crf",
-            &crf,
-            "-pix_fmt",
-            "yuv420p",
             "-color_range",
             "tv",
             "-r",

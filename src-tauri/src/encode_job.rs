@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
-use crate::{errors, ffmpeg::Tool};
+use crate::{encoder::Encoder, errors, ffmpeg::Tool};
 
 pub(crate) const CANCELLED: &str = "ENCODE_CANCELLED";
 
@@ -26,6 +26,8 @@ pub(crate) struct Progress {
     pub(crate) duration_seconds: f64,
     pub(crate) processed_seconds: f64,
     pub(crate) cancelled: bool,
+    pub(crate) encoder: Option<Encoder>,
+    pub(crate) fallback: bool,
 }
 
 pub(crate) struct EncodeJob {
@@ -40,6 +42,8 @@ impl Default for EncodeJob {
                 duration_seconds: 0.0,
                 processed_seconds: 0.0,
                 cancelled: false,
+                encoder: None,
+                fallback: false,
             }),
         }
     }
@@ -77,6 +81,23 @@ impl EncodeJob {
 
     pub(crate) fn set_phase(&self, phase: Phase) {
         self.state().phase = phase;
+    }
+
+    pub(crate) fn begin_encoding_attempt(
+        &self,
+        encoder: Encoder,
+        fallback: bool,
+        offset: f64,
+    ) -> Result<(), String> {
+        let mut state = self.state();
+        if state.cancelled {
+            return Err(CANCELLED.into());
+        }
+        state.phase = Phase::Encoding;
+        state.encoder = Some(encoder);
+        state.fallback = fallback;
+        state.processed_seconds = state.duration_seconds * offset;
+        Ok(())
     }
 
     fn update_time(&self, seconds: f64) {

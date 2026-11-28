@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { defaultSettings, validateSettings, parseSettings, serializeSettings, parseOutputSettings, outputIds, settingsFields } from "../src/services/settings-schema.ts";
 import { readSettingControls, applySettingControls } from "../src/services/settings-controls.ts";
 
-test("validates all 81 desktop output combinations and rejects unsupported options",()=>{
-  for(const resolution of settingsFields.resolution.options)for(const fps of settingsFields.fps.options)for(const fit of settingsFields.fit.options)for(const quality of settingsFields.quality.options){
+test("validates all 486 desktop output combinations and rejects unsupported options",()=>{
+  for(const resolution of settingsFields.resolution.options)for(const fps of settingsFields.fps.options)for(const fit of settingsFields.fit.options)for(const quality of settingsFields.quality.options)for(const encoder of settingsFields.encoder.options){
     const [width,height]=resolution.split("x").map(Number);
-    assert.deepEqual(parseOutputSettings({resolution,fps,fit,quality}),{width,height,fps:Number(fps),fit,crf:Number(quality)});
+    assert.deepEqual(parseOutputSettings({resolution,fps,fit,quality,encoder}),{width,height,fps:Number(fps),fit,crf:Number(quality),encoder});
   }
   assert.equal(defaultSettings().resolution,"1920x1080");
-  for(const patch of [{fps:30},{fps:"030"},{fit:"other"},{quality:"NaN"},{resolution:"4k"},{resolution:"1280x720"}])
+  for(const patch of [{fps:30},{fps:"030"},{fit:"other"},{quality:"NaN"},{encoder:"bad"},{resolution:"4k"},{resolution:"1280x720"}])
     assert.equal(parseOutputSettings({...defaultSettings(),...patch}),null);
 });
 test("desktop settings JSON format and validation remain compatible",()=>{

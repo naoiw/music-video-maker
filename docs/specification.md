@@ -55,3 +55,7 @@ PNG / JPEG / GIF / 静止画 WebP / MP4 / WebM / MOV / MKV をベース・追加
 ## Post-MVP：macOS / Linux（#39）
 
 Windowsのsetup.bat / build.batを維持し、macOS（Apple Silicon / Intel）・Ubuntu 24.04 x64ではsetup.sh / build.sh / run.shを利用する。Node・pnpm・Cargo lockfileの方針は共通。TauriネイティブビルドとFFmpegの全結合テストを各OSのCIで実行する。ソースのみ公開し、macOS署名・公証・アプリバンドルやLinuxパッケージの生成・配布は対象外。追加OSの実機GUIは要確認。
+
+## Post-MVP：GPUエンコード（#40）
+
+H.264/AAC MP4 の形式は維持し、CPU（既定）・自動・実機検出に成功したGPUを選択可能にする。Windows NVENC/QSV/AMF、macOS VideoToolbox、Linux NVENC/QSVを初期候補とし、VA-APIは対象外。試験エンコードで利用可否を判定し、実出力でも検証する。CPUフォールバックを1回に限定し、失敗時は不完全な出力を保存しない。GPU SDKの直接導入・配布は不要。速度・画質はハードウェア依存のため未保証。

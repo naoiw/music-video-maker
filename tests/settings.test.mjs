@@ -11,7 +11,8 @@ test("defaults round-trip; disabled filter values and manual limiter state persi
   assert.equal(defaultSettings()["lowpass-hz"], 12000);
   assert.equal(defaultSettings()["gain-enabled"], false);
   assert.equal(defaultSettings().fps, "30");
-  assert.equal(settingsIds.length, 22);
+  assert.equal(settingsIds.length, 23);
+  assert.equal(defaultSettings().encoder, "cpu");
   assert.ok(settingsIds.filter(id => id.endsWith("-enabled")).every(id => defaultSettings()[id] === false));
 });
 
@@ -72,4 +73,16 @@ test("blurred layout is the default while existing saved contain and cover choic
     assert.equal(parseSettings(serializeSettings(values)).fit, fit);
   }
   assert.equal(validateSettings({ ...defaultSettings(), fit: "unknown" }), null);
+});
+
+test("legacy settings migrate only the missing encoder; unknown encoders are rejected", () => {
+  const values = { ...defaultSettings(), fps: "60", "volume-gain": -6 };
+  delete values.encoder;
+  assert.deepEqual(parseSettings(JSON.stringify({ version: 1, values })), { ...values, encoder: "cpu" });
+  for (const encoder of ["cpu", "auto", "nvenc", "qsv", "amf", "videotoolbox"]) {
+    const current = { ...defaultSettings(), encoder };
+    assert.deepEqual(parseSettings(serializeSettings(current)), current);
+  }
+  assert.equal(parseSettings(JSON.stringify({ version: 1, values: { ...values, encoder: "unknown" } })), null);
+  assert.equal(validateSettings({ ...defaultSettings(), encoder: "unknown" }), null);
 });
