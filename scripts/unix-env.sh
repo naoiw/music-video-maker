@@ -79,14 +79,15 @@ check_media() {
     require_command ffprobe
     ffmpeg -version >/dev/null
     ffprobe -version >/dev/null
+    # Here-strings avoid SIGPIPE from grep -q terminating a producer early.
     local encoders filters feature
     encoders="$(ffmpeg -hide_banner -encoders)"
     for feature in libx264 aac libmp3lame libopus libvpx-vp9 libwebp libwebp_anim; do
-        printf '%s\n' "$encoders" | grep -Eq "[[:space:]]${feature}[[:space:]]" || fail "FFmpeg encoder unavailable: $feature. Install a full FFmpeg build."
+        grep -Eq "[[:space:]]${feature}[[:space:]]" <<< "$encoders" || fail "FFmpeg encoder unavailable: $feature. Install a full FFmpeg build."
     done
     filters="$(ffmpeg -hide_banner -filters)"
     for feature in afftdn equalizer highpass lowpass loudnorm alimiter volume overlay gblur; do
-        printf '%s\n' "$filters" | grep -Eq "[[:space:]]${feature}[[:space:]]" || fail "FFmpeg filter unavailable: $feature."
+        grep -Eq "[[:space:]]${feature}[[:space:]]" <<< "$filters" || fail "FFmpeg filter unavailable: $feature."
     done
 }
 
