@@ -99,3 +99,13 @@ summary { cursor: pointer; }
 .overlay-row .actions { margin: 6px 0 10px; }
 .overlay-row button { font-size: 12px; padding: 4px 8px; }
 .overlay-row[data-invalid="true"] { border-color: light-dark(#b91c1c, #fca5a5); }
+
+/* Audio analysis: independent of video layers and output composition. */
+:root { --analysis-original: light-dark(#155cb7, #8bb6ff); --analysis-processed: light-dark(#11734d, #72d5ac); }
+.analysis-chart { display: block; width: 100%; height: 180px; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; }
+#analysis-spectrum { height: 210px; }
+#analysis-result h3 { margin: 16px 0 8px; }
+.analysis-legend { display: flex; gap: 14px; font-size: 12px; margin-bottom: 6px; }
+.analysis-original { color: var(--analysis-original); }
+.analysis-processed { color: var(--analysis-processed); }
+.analysis-stats { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 5px 9px; margin-top: 8px; font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

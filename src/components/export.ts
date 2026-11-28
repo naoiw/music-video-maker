@@ -12,6 +12,7 @@ export function initializeExport(
   available: boolean,
   refreshPreview: () => void,
   layerEditor: LayerEditor,
+  analysisBusy: () => boolean,
 ): () => void {
   const audioButton = document.querySelector<HTMLButtonElement>("#select-audio");
   const visualButton = document.querySelector<HTMLButtonElement>("#select-visual");
@@ -126,13 +127,14 @@ export function initializeExport(
     const audio = getSelectedAudio();
     const visual = getSelectedVisual();
     outputButton!.disabled = !available || encoding || choosingOutput;
-    startButton!.disabled = !available || encoding || choosingOutput ||
+    startButton!.disabled = !available || encoding || choosingOutput || analysisBusy() ||
       audioButton!.disabled || visualButton!.disabled ||
       !audio || !visual || !outputPath || !settings || !validFilterInputs() || !layerEditor.ready() ||
       (detecting && settings.encoder !== "cpu");
     if (encoding || choosingOutput) return;
     progress!.value = 0;
     status!.textContent = !available ? "FFmpegとFFprobeが必要です。" :
+      analysisBusy() ? "音声解析の終了後に動画を生成できます。" :
       !audio || !visual || !outputPath ? "音声・画像と保存先を選択してください。" :
       !settings ? "出力設定が無効です。" :
       !layerEditor.ready() ? "追加レイヤーの読み込み・設定を確認してください。" :

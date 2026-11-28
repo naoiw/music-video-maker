@@ -116,6 +116,22 @@
           <p id="audio-preview-status" class="muted" role="status">音声素材を選択してください。</p>
         </div>
       </section>
+      <section class="panel" aria-labelledby="analysis-title">
+        <h2 id="analysis-title">音声解析</h2>
+        <p class="muted">原音と現在のフィルタ処理後の音声を比較します（全曲・60分以下）。動画には描画されません。</p>
+        <div class="actions"><button type="button" id="analyze-audio" disabled>全曲を解析</button></div>
+        <p id="analysis-status" class="muted" role="status">音声素材を選択してください。</p>
+        <div id="analysis-result" hidden>
+          <h3>波形（共通振幅・時間軸）</h3>
+          <canvas id="analysis-waveform" class="analysis-chart" aria-label="原音と加工音の全曲波形。試聴位置は試聴区間スライダーでも設定できます。" role="img"></canvas>
+          <div class="analysis-stats"><span class="analysis-original">原音</span><span id="analysis-original-stats"></span><span class="analysis-processed">加工音</span><span id="analysis-processed-stats"></span></div>
+          <h3>平均周波数スペクトラム（dBFS/bin）</h3>
+          <div class="analysis-legend"><span class="analysis-original">● 原音</span><span class="analysis-processed">● 加工音</span></div>
+          <canvas id="analysis-spectrum" class="analysis-chart" aria-label="原音と加工音の全曲平均FFTパワースペクトラム（20Hzからナイキスト周波数）" role="img"></canvas>
+          <p id="analysis-details" class="muted"></p>
+          <p class="muted">FFTはHann窓・全曲平均。ステレオはチャンネル別に解析したパワーを平均します。AAC圧縮前のPCMの値です。</p>
+        </div>
+      </section>
       <section class="panel" aria-labelledby="export-title">
         <h2 id="export-title">動画出力</h2>
         <div class="source"><div><h3>保存先</h3><p id="output-path">未選択</p></div><button disabled type="button" id="select-output">選択</button></div>
