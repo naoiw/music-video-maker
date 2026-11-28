@@ -109,6 +109,7 @@ async fn encode_video(
     output_path: String,
     settings: video::OutputSettings,
     filters: Vec<audio_filters::FilterEntry>,
+    overlays: Option<Vec<video::OverlayLayer>>,
     job_id: u32,
 ) -> Result<video::VideoInfo, String> {
     let active = encode_job::ActiveJob::register(job_id)?;
@@ -119,6 +120,7 @@ async fn encode_video(
             &output_path,
             settings,
             &filters,
+            overlays.as_deref().unwrap_or_default(),
             active.job(),
         );
         active.job().check_cancelled()?;
