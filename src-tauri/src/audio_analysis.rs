@@ -170,7 +170,11 @@ fn read_pcm(mut reader: impl Read, info: &audio::AudioInfo) -> Result<Track, Str
     summary.finish()
 }
 
-fn analyze_track(path: &str, info: &audio::AudioInfo, graph: Option<&str>) -> Result<Track, String> {
+fn analyze_track(
+    path: &str,
+    info: &audio::AudioInfo,
+    graph: Option<&str>,
+) -> Result<Track, String> {
     let mut stderr = tempfile::tempfile()
         .map_err(|error| errors::io_error("解析用一時ファイル", &error, "OUTPUT_IO"))?;
     let stderr_output = stderr.try_clone().map_err(|error| error.to_string())?;
