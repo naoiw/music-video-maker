@@ -1,6 +1,6 @@
 # Music Video Maker
 
-MP3 と画像を合成し、音声フィルタで音質を調整して YouTube 向けの MP4 を生成する Windows 用ローカル GUI ツールです。Suno の楽曲にも対応します。素材は外部に送信しません。
+MP3 と1枚以上の画像（PNG / JPEG / GIF）を合成し、音声フィルタで音質を調整して YouTube 向けの MP4 を生成する Windows 用ローカル GUI ツールです。Suno の楽曲にも対応します。素材は外部に送信しません。
 
 ## セットアップとビルド（Windows 10 / 11 x64）
 
@@ -36,7 +36,7 @@ MP3 と画像を合成し、音声フィルタで音質を調整して YouTube �
 - 出力・音声フィルタ設定の自動保存と復元、名前付きフィルタプリセット。
 - 生成進捗と中断、既存出力の保護、エラー時の対処方法と診断情報。
 
-対象は Windows 10 / 11 x64。MP4 / WebM 等の動画素材の読み込みは未対応です。
+対象は Windows 10 / 11 x64。現在の音声入力は MP3、映像入力は PNG / JPEG / GIF のみです。WebP・MP4・WebM 等の映像入力と動画からの音声利用は [#31](https://github.com/naoiw/music-video-maker/issues/31)、WAV・FLAC 等の音声入力は [#32](https://github.com/naoiw/music-video-maker/issues/32) で予定しています。
 
 ## 開発
 

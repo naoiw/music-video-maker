@@ -1,5 +1,6 @@
 import { reportError } from "./diagnostics";
-import { loadVisual, renderBlurredPreview, selectVisual, type VisualSource } from "../services/visual";
+import { renderBlurredPreview, type VisualSource } from "../services/visual";
+import { loadVisualPreview } from "./visual-preview";
 import type { OutputSettings } from "../services/video";
 
 let selectedVisual: VisualSource | null = null;
@@ -96,17 +97,12 @@ export function initializeVisualSource(onChange: () => void = () => {}): (path?:
     onChange();
     status.textContent = "画像を確認しています…";
     try {
-      const selection = (path === undefined ? await selectVisual() : await loadVisual(path));
+      const selection = await loadVisualPreview("preview-image", path);
       if (!selection) {
         status.textContent = "";
         return;
       }
-      const { source, previewUrl } = selection;
-      const image = new Image();
-      image.alt = source.name;
-      image.className = "preview-image";
-      image.src = previewUrl;
-      await image.decode();
+      const { source, image } = selection;
 
       // Keep the previous valid selection until both metadata and preview succeed.
       preview.replaceChildren(image);

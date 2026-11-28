@@ -4,13 +4,13 @@
 
 - main: 段階ごとに確認済みの安定版。初期構築・仕様・開発基盤は直接反映可。
 - develop: Windows版の機能統合・動作確認用。
-- feat/*, fix/*, docs/*, chore/*: develop を起点とする個別 Issue の作業ブランチ。
+- feat/*, fix/*, refactor/*, docs/*, chore/*: develop を起点とする個別 Issue の作業ブランチ。
 
 ## 手順
 
 1. 原則として若い Issue から着手する。ただしユーザー指定の優先Issueを先に対応する。
 2. 初期構築後は develop から作業ブランチを作成する。
-3. PR を develop に作成し、差分と CI を確認してマージする。完了する Issue は PR 本文に Closes #番号 を単独行で記載する（複数の場合は1行ずつ）。
+3. PR を develop 向けに作成し、差分と CI を確認し、ユーザーの指示・確認に従ってマージする。完了する Issue は PR 本文に Closes #番号 を単独行で記載する（複数の場合は1行ずつ）。
 4. develop の動作を確認し、段階ごとに develop → main の PR を作成する。
 5. develop へのマージ時に専用 Actions が対応 Issue を自動クローズする。部分実装は Refs #番号 とする。main への段階的マージは引き続きユーザー確認後に行う。
 6. main の変更を develop に取り込み、次の段階へ進む。

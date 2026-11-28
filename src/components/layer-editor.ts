@@ -1,6 +1,6 @@
 import { reportError } from "./diagnostics";
-import { getSelectedVisual } from "./visual-source";
-import { selectVisual, type VisualSource } from "../services/visual";
+import type { VisualSource } from "../services/visual";
+import { loadVisualPreview } from "./visual-preview";
 import {
   MAX_OVERLAYS, defaultLayerGeometry, layerPixelRect, moveLayer, parseLayerGeometry,
   type LayerGeometry, type OverlayLayer,
@@ -17,39 +17,11 @@ interface LayerEntry {
   backward: HTMLButtonElement;
 }
 
-const entries: LayerEntry[] = []; // Back to front, as in the native compositor.
-let loading = false;
-let locked = false;
-let lastSettings: OutputSettings | null = null;
-
-export function overlaysReady(): boolean {
-  return !loading && entries.every(entry => entry.valid);
-}
-
-export function getOverlays(): OverlayLayer[] {
-  return entries.map(entry => ({ path: entry.source.path, ...entry.geometry }));
-}
-
-export function refreshLayerEditor(settings: OutputSettings | null, encoding: boolean): void {
-  locked = encoding;
-  if (settings) lastSettings = settings;
-  const editor = document.querySelector<HTMLFieldSetElement>("#overlay-editor");
-  const add = document.querySelector<HTMLButtonElement>("#add-overlay");
-  if (!editor || !add) return;
-  editor.disabled = encoding || loading || !getSelectedVisual();
-  add.disabled = entries.length >= MAX_OVERLAYS;
-  if (!lastSettings) return;
-  const { width, height } = lastSettings;
-  entries.forEach(entry => {
-    const rect = layerPixelRect(entry.geometry, width, height);
-    Object.assign(entry.image.style, {
-      left: rect.x / width * 100 + "%",
-      top: rect.y / height * 100 + "%",
-      width: rect.width / width * 100 + "%",
-      height: rect.height / height * 100 + "%",
-      opacity: String(entry.geometry.opacity / 100),
-    });
-  });
+export interface LayerEditor {
+  ready(): boolean;
+  getOverlays(): OverlayLayer[];
+  refresh(settings: OutputSettings | null, encoding: boolean): void;
+  load(path?: string): Promise<void>;
 }
 
 function button(label: string, action: () => void): HTMLButtonElement {
@@ -60,15 +32,48 @@ function button(label: string, action: () => void): HTMLButtonElement {
   return element;
 }
 
-export function initializeLayerEditor(onChange: () => void): void {
+export function initializeLayerEditor(hasBase: () => boolean, onChange: () => void): LayerEditor {
+  const fieldset = document.querySelector<HTMLFieldSetElement>("#overlay-editor");
   const add = document.querySelector<HTMLButtonElement>("#add-overlay");
   const list = document.querySelector<HTMLElement>("#overlay-list");
   const host = document.querySelector<HTMLElement>("#overlay-preview");
   const status = document.querySelector<HTMLElement>("#overlay-status");
-  if (!add || !list || !host || !status) throw new Error("Missing layer editor elements");
+  if (!fieldset || !add || !list || !host || !status) throw new Error("Missing layer editor elements");
+
+  const entries: LayerEntry[] = []; // Back to front, as in the native compositor.
+  let loading = false;
+  let locked = false;
+  let lastSettings: OutputSettings | null = null;
+
+  function ready(): boolean {
+    return !loading && entries.every(entry => entry.valid);
+  }
+
+  function getOverlays(): OverlayLayer[] {
+    return entries.map(entry => ({ path: entry.source.path, ...entry.geometry }));
+  }
+
+  function refresh(settings: OutputSettings | null, encoding: boolean): void {
+    locked = encoding;
+    if (settings) lastSettings = settings;
+    fieldset!.disabled = encoding || loading || !hasBase();
+    add!.disabled = entries.length >= MAX_OVERLAYS;
+    if (!lastSettings) return;
+    const { width, height } = lastSettings;
+    entries.forEach(entry => {
+      const rect = layerPixelRect(entry.geometry, width, height);
+      Object.assign(entry.image.style, {
+        left: rect.x / width * 100 + "%",
+        top: rect.y / height * 100 + "%",
+        width: rect.width / width * 100 + "%",
+        height: rect.height / height * 100 + "%",
+        opacity: String(entry.geometry.opacity / 100),
+      });
+    });
+  }
 
   function reorder(): void {
-    // Keep existing image nodes and their playback; DOM order determines stacking.
+    // Keep image nodes and playback; z-index follows the back-to-front array.
     entries.forEach((entry, i) => {
       entry.image.style.zIndex = String(i);
       entry.forward.disabled = i === entries.length - 1;
@@ -147,31 +152,29 @@ export function initializeLayerEditor(onChange: () => void): void {
     return entry;
   }
 
-  add.addEventListener("click", async () => {
-    if (locked || loading || !getSelectedVisual() || entries.length >= MAX_OVERLAYS) return;
+  async function load(path?: string): Promise<void> {
+    if (locked || loading || !hasBase() || entries.length >= MAX_OVERLAYS) return;
     loading = true;
     onChange();
-    status.textContent = "画像を確認しています…";
+    status!.textContent = "画像を確認しています…";
     try {
-      const selection = await selectVisual();
+      const selection = await loadVisualPreview("overlay-image", path);
       if (!selection) {
-        status.textContent = "";
+        status!.textContent = "";
         return;
       }
-      const image = new Image();
-      image.className = "overlay-image";
-      image.alt = selection.source.name;
-      image.src = selection.previewUrl;
-      await image.decode();
-      entries.push(makeEntry(selection.source, image));
-      host.append(image);
+      const { source, image } = selection;
+      entries.push(makeEntry(source, image));
+      host!.append(image);
       reorder();
-      status.textContent = "";
+      status!.textContent = "";
     } catch (error) {
-      status.textContent = reportError("image", error);
+      status!.textContent = reportError("image", error);
     } finally {
       loading = false;
       onChange();
     }
-  });
+  }
+  add.addEventListener("click", () => { void load(); });
+  return { ready, getOverlays, refresh, load };
 }
