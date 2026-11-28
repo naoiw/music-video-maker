@@ -3,7 +3,7 @@
 ## ブランチ
 
 - main: 段階ごとに確認済みの安定版。初期構築・仕様・開発基盤は直接反映可。
-- develop: 機能の統合・動作確認用。#29 のブラウザ版公開準備期間はここに統合する。
+- develop: Windows版の機能統合・動作確認用。
 - feat/*, fix/*, docs/*, chore/*: develop を起点とする個別 Issue の作業ブランチ。
 
 ## 手順
@@ -24,7 +24,7 @@
 - #64: 画像配置の既定値改善（#24〜#40より優先、Phase 5開始前）
 - #24–#27: MVP のローカルビルド・総合検証（バイナリ配布は中止）
 
-#28 以降は MVP 完成後の拡張とする。PR #75 で MVP を main に統合し、develop は削除済み。PR #85 までのブラウザ版は main 向け PR で開発した。以降はユーザー指定により develop を再作成し、個別作業ブランチ → develop の PR に統一する。Windows CI とブラウザ CI は develop 向け PR・develop push でも実行する。#29 の公開準備（機能・実用性・ライセンス・安全性の確認）が整った時点で develop → main の PR を作成し、ユーザー確認後にマージする。Pages 公開は従来通りレビュー済み core-lock を使用した main の手動 workflow_dispatch（deploy=true）に限定し、develop は公開しない。
+#28 以降は MVP 完成後の拡張とする。#29 のブラウザ版は機能検証まで成功したが、公開条件を満たせず中止した。実装の保存先と理由は [最終判断](browser-publication-review.md) を参照。Windows版の開発を継続し、次は #30 に着手する。個別作業ブランチ → develop の PR で CI を確認し、段階ごとにユーザー確認後に develop → main へ統合する。Pages公開は行わない。
 
 ## 注意事項
 

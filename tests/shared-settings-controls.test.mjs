@@ -1,34 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultSettings, validateSettings, parseSettings, serializeSettings, parseOutputSettings, browserResolutions, outputIds, settingsFields } from "../src/services/settings-schema.ts";
+import { defaultSettings, validateSettings, parseSettings, serializeSettings, parseOutputSettings, outputIds, settingsFields } from "../src/services/settings-schema.ts";
 import { readSettingControls, applySettingControls } from "../src/services/settings-controls.ts";
 
-test("output profiles share all choices except browser-only 720p",()=>{
-  for(const target of ["desktop","browser"]){
-    const resolutions=target==="desktop"?settingsFields.resolution.options:browserResolutions;
-    for(const resolution of resolutions)for(const fps of settingsFields.fps.options)for(const fit of settingsFields.fit.options)for(const quality of settingsFields.quality.options){
-      const [width,height]=resolution.split("x").map(Number);
-      assert.deepEqual(parseOutputSettings({resolution,fps,fit,quality},target),{width,height,fps:Number(fps),fit,crf:Number(quality)});
-    }
+test("validates all 81 desktop output combinations and rejects unsupported options",()=>{
+  for(const resolution of settingsFields.resolution.options)for(const fps of settingsFields.fps.options)for(const fit of settingsFields.fit.options)for(const quality of settingsFields.quality.options){
+    const [width,height]=resolution.split("x").map(Number);
+    assert.deepEqual(parseOutputSettings({resolution,fps,fit,quality}),{width,height,fps:Number(fps),fit,crf:Number(quality)});
   }
   assert.equal(defaultSettings().resolution,"1920x1080");
-  assert.equal(defaultSettings("browser").resolution,"1280x720");
-  assert.equal(parseOutputSettings(defaultSettings("browser")),null);
-  for(const patch of [{fps:30},{fps:"030"},{fit:"other"},{quality:"NaN"},{resolution:"4k"}])
-    assert.equal(parseOutputSettings({...defaultSettings(),...patch},"browser"),null);
+  for(const patch of [{fps:30},{fps:"030"},{fit:"other"},{quality:"NaN"},{resolution:"4k"},{resolution:"1280x720"}])
+    assert.equal(parseOutputSettings({...defaultSettings(),...patch}),null);
 });
-test("settings JSON format remains compatible and desktop still rejects 720p",()=>{
+test("desktop settings JSON format and validation remain compatible",()=>{
   const desktop={...defaultSettings(),"volume-gain":-6,"gain-enabled":false,"limiter-enabled":false};
   const encoded=serializeSettings(desktop);
-  assert.deepEqual(parseSettings(encoded,"browser"),desktop);
-  assert.equal(serializeSettings(desktop,"browser"),encoded);
-  const browser={...desktop,resolution:"1280x720"};
-  assert.deepEqual(parseSettings(serializeSettings(browser,"browser"),"browser"),browser);
-  assert.equal(validateSettings(browser),null);
-  assert.equal(parseSettings(serializeSettings(browser,"browser")),null);
-  assert.throws(()=>serializeSettings(browser));
-  assert.equal(validateSettings({...browser,"eq-q":0.15},"browser"),null);
-  assert.deepEqual(validateSettings({...browser,sourcePath:"secret.mp3"},"browser"),browser);
+  assert.deepEqual(parseSettings(encoded),desktop);
+  assert.equal(encoded,JSON.stringify({version:1,values:desktop}));
+  assert.equal(validateSettings({...desktop,resolution:"1280x720"}),null);
+  assert.throws(()=>serializeSettings({...desktop,resolution:"1280x720"}));
+  assert.equal(validateSettings({...desktop,"eq-q":0.15}),null);
+  assert.deepEqual(validateSettings({...desktop,sourcePath:"secret.mp3"}),desktop);
 });
 test("shared DOM controls preserve typed values without dispatching events",()=>{
   class Input {
@@ -41,7 +33,7 @@ test("shared DOM controls preserve typed values without dispatching events",()=>
   const previous={document:globalThis.document,HTMLInputElement:globalThis.HTMLInputElement,HTMLSelectElement:globalThis.HTMLSelectElement};
   Object.assign(globalThis,{document:{getElementById:id=>nodes.get(id)},HTMLInputElement:Input,HTMLSelectElement:Select});
   try{
-    const values={...defaultSettings("browser"),"gain-enabled":true,"limiter-enabled":false,"volume-gain":-6};
+    const values={...defaultSettings(),resolution:"1080x1080","gain-enabled":true,"limiter-enabled":false,"volume-gain":-6};
     applySettingControls(values);
     assert.deepEqual(readSettingControls(),values);
     applySettingControls(defaultSettings(),outputIds);

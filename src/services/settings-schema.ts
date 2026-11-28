@@ -33,12 +33,9 @@ export type SettingValue = string | boolean | number;
 export type SettingsValues = Record<SettingId, SettingValue>;
 export const settingsIds = Object.keys(settingsFields) as SettingId[];
 export const SETTINGS_VERSION = 1;
-export type SettingsTarget = "desktop" | "browser";
-export const browserResolutions = ["1280x720", ...settingsFields.resolution.options] as const;
 export const outputIds = ["resolution", "fps", "fit", "quality"] as const;
 export type OutputId = (typeof outputIds)[number];
 export type Fit = (typeof settingsFields.fit.options)[number];
-export type BrowserResolution = (typeof browserResolutions)[number];
 export interface OutputSettings {
   width: number;
   height: number;
@@ -46,14 +43,8 @@ export interface OutputSettings {
   crf: number;
   fit: Fit;
 }
-export function resolutionOptions(target: SettingsTarget): readonly string[] {
-  return target === "browser" ? browserResolutions : settingsFields.resolution.options;
-}
-
-export function defaultSettings(target: SettingsTarget = "desktop"): SettingsValues {
-  const values = Object.fromEntries(settingsIds.map(id => [id, settingsFields[id].initial])) as SettingsValues;
-  if (target === "browser") values.resolution = browserResolutions[0];
-  return values;
+export function defaultSettings(): SettingsValues {
+  return Object.fromEntries(settingsIds.map(id => [id, settingsFields[id].initial])) as SettingsValues;
 }
 
 export function isSettingId(id: string): id is SettingId {
@@ -74,43 +65,37 @@ function validValue(field: Field, value: unknown): value is SettingValue {
   return Math.abs(steps - Math.round(steps)) < 1e-8;
 }
 
-function validSetting(id: SettingId, value: unknown, target: SettingsTarget): value is SettingValue {
-  return id === "resolution"
-    ? typeof value === "string" && resolutionOptions(target).includes(value)
-    : validValue(settingsFields[id], value);
-}
-
 /** Output selects use strings; normalize only after validating every choice. */
-export function parseOutputSettings(value: unknown, target: SettingsTarget = "desktop"): OutputSettings | null {
-  if (!isRecord(value) || !outputIds.every(id => Object.hasOwn(value,id) && validSetting(id,value[id],target))) return null;
+export function parseOutputSettings(value: unknown): OutputSettings | null {
+  if (!isRecord(value) || !outputIds.every(id => Object.hasOwn(value,id) && validValue(settingsFields[id], value[id]))) return null;
   const [width,height] = (value.resolution as string).split("x").map(Number);
   return { width, height, fps:Number(value.fps), crf:Number(value.quality), fit:value.fit as Fit };
 }
 
 /** Validate static UI bounds. Sample-rate-dependent limits are checked at use time. */
-export function validateSettings(value: unknown, target: SettingsTarget = "desktop"): SettingsValues | null {
+export function validateSettings(value: unknown): SettingsValues | null {
   if (!isRecord(value)) return null;
-  const result = defaultSettings(target);
+  const result = defaultSettings();
   for (const id of settingsIds) {
     const entry = value[id];
-    if (!Object.hasOwn(value, id) || !validSetting(id, entry, target)) return null;
+    if (!Object.hasOwn(value, id) || !validValue(settingsFields[id], entry)) return null;
     result[id] = entry;
   }
   return result;
 }
 
-export function parseSettings(raw: string, target: SettingsTarget = "desktop"): SettingsValues | null {
+export function parseSettings(raw: string): SettingsValues | null {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed) || parsed.version !== SETTINGS_VERSION) return null;
-    return validateSettings(parsed.values, target);
+    return validateSettings(parsed.values);
   } catch {
     return null;
   }
 }
 
-export function serializeSettings(values: SettingsValues, target: SettingsTarget = "desktop"): string {
-  const validated = validateSettings(values, target);
+export function serializeSettings(values: SettingsValues): string {
+  const validated = validateSettings(values);
   if (!validated) throw new Error("Invalid settings");
   return JSON.stringify({ version: SETTINGS_VERSION, values: validated });
 }
