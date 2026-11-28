@@ -51,6 +51,10 @@
 
 [MDN WebCodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API) と [Codec selection](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API/Codec_selection) を参照。WebCodecsだけではMP4コンテナの生成を完結できない。候補の [Mediabunny](https://mediabunny.dev/) はMPL-2.0を掲げるが採用は未決定で、ライセンス・依存関係は採用時に審査する。次の技術評価ではまずWindows Chrome/EdgeのH.264/AACサポート、最小MP4生成、実測を確認し、現機能を維持できる見込みを判断する。
 
+## WebCodecs初期検証
+
+[独立した技術検証](browser-webcodecs-probe.md) を追加。Windows Chrome/EdgeとLinux ChromeでH.264/AAC対応、合成素材のMP4生成・独立デコード・処理時間・通信を検査する。未対応の環境は明示し、全機能同等・公開可能とは判断しない。既存WASMの公開承認は変更しない。新規CIは未確認。
+
 ## 構造化公開ゲート
 
 従来のtruthyなreview確認を廃止。scripts/web-publication-gate.mjsは試験時もコア版・SHA-512/SHA-256の形式と固定値を必須とする。公開時はapprovedが厳密にtrueであり、reviewのschemaVersion=1、reviewer、reviewedOn（YYYY-MM-DD）、decisionReference（明示的な承認記録）、core（lockのversion/registryIntegrity/coreJsSha256/coreWasmSha256の完全一致）、itemsを要求する。itemsの必須キーは以下の通り。それぞれ status=accepted、具体的な証跡を示す非空の evidence を必要とする。

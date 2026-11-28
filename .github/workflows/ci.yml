@@ -72,6 +72,18 @@ jobs:
           # Run every ignored test here rather than depending on test-name prefixes.
           cargo test --locked --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Probe native WebCodecs in Chrome and Edge
+        run: |
+          $browsers = @(
+            (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/Edge/Application/msedge.exe')
+          )
+          foreach ($browser in $browsers) {
+            if (!(Test-Path -LiteralPath $browser)) { throw "Missing expected browser: $browser" }
+            $env:CHROME_BIN = $browser
+            node scripts/webcodecs-probe.mjs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Check setup script syntax
         run: |
           $tokens = $null; $errors = $null
