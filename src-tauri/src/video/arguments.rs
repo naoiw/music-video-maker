@@ -114,13 +114,21 @@ fn layered_filter(
     (graph, format!("[{previous}]"))
 }
 
+// Original audio must be read to EOF; cap only the infinite visual stream.
+// Prepared PCM has an independently measured duration and can use output -t.
+#[derive(Clone, Copy)]
+pub(super) enum AudioTiming<'a> {
+    Original(&'a str),
+    Prepared(&'a str),
+}
+
 pub(super) fn encoder_args(
     audio_path: &str,
     visual_path: &str,
     source: VisualKind,
     temporary_path: &str,
     settings: OutputSettings,
-    filtered_duration: Option<&str>,
+    timing: AudioTiming<'_>,
     overlays: &[(&OverlayLayer, VisualKind)],
 ) -> Vec<String> {
     let fps = settings.fps.to_string();
@@ -149,12 +157,12 @@ pub(super) fn encoder_args(
         [
             "-protocol_whitelist",
             "file",
-            if filtered_duration.is_some() {
+            if matches!(timing, AudioTiming::Prepared(_)) {
                 "-f"
             } else {
                 "-format_whitelist"
             },
-            if filtered_duration.is_some() {
+            if matches!(timing, AudioTiming::Prepared(_)) {
                 "wav"
             } else {
                 crate::audio::AUDIO_FORMATS
@@ -167,6 +175,12 @@ pub(super) fn encoder_args(
     );
     if overlays.is_empty() {
         let map = format!("0:{}", source.stream());
+        let filter = match timing {
+            AudioTiming::Original(duration) => {
+                format!("{filter},fps={fps},trim=duration={duration}")
+            }
+            AudioTiming::Prepared(_) => filter,
+        };
         args.extend(
             ["-map", &map, "-vf", &filter]
                 .into_iter()
@@ -176,7 +190,13 @@ pub(super) fn encoder_args(
         for (layer, kind) in overlays {
             args.extend(visual_input_args(&layer.path, *kind, &fps));
         }
-        let (graph, output) = layered_filter(&filter, source, overlays, settings);
+        let (mut graph, mut output) = layered_filter(&filter, source, overlays, settings);
+        if let AudioTiming::Original(duration) = timing {
+            use std::fmt::Write;
+            write!(graph, ";{output}trim=duration={duration}[timed]")
+                .expect("writing to a String cannot fail");
+            output = "[timed]".into();
+        }
         args.extend([
             "-filter_complex_threads".into(),
             "1".into(),
@@ -214,10 +234,8 @@ pub(super) fn encoder_args(
         .into_iter()
         .map(str::to_owned),
     );
-    if let Some(duration) = filtered_duration {
+    if let AudioTiming::Prepared(duration) = timing {
         args.extend(["-t".into(), duration.into()]);
-    } else {
-        args.push("-shortest".into());
     }
     args.extend(["-f", "mp4", temporary_path].into_iter().map(str::to_owned));
     args

@@ -7,7 +7,7 @@ use std::sync::Mutex;
 mod arguments;
 mod output;
 
-use arguments::{encoder_args, VisualKind};
+use arguments::{encoder_args, AudioTiming, VisualKind};
 use output::{positive_duration, validate_destination, validate_output};
 
 static ENCODE_LOCK: Mutex<()> = Mutex::new(());
@@ -338,9 +338,15 @@ pub(crate) fn encode_video(
         Some(graph) => Some(prepare_audio(audio_path, graph, &audio_info, parent, job)?),
         None => None,
     };
-    let duration = prepared
+    let expected_duration = prepared
         .as_ref()
-        .map(|audio| format!("{:.6}", audio.duration));
+        .map_or(audio_info.duration_seconds, |audio| audio.duration);
+    let duration = format!("{expected_duration:.6}");
+    let timing = if prepared.is_some() {
+        AudioTiming::Prepared(&duration)
+    } else {
+        AudioTiming::Original(&duration)
+    };
     let input = match &prepared {
         Some(audio) => audio
             .path
@@ -368,7 +374,7 @@ pub(crate) fn encode_video(
         source,
         temp_path,
         settings,
-        duration.as_deref(),
+        timing,
         &prepared_overlays,
     );
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -395,9 +401,6 @@ pub(crate) fn encode_video(
     ])?;
     let duration_seconds = validate_output(&probe.stdout, settings)
         .map_err(|error| crate::errors::tagged("OUTPUT_VERIFY", error))?;
-    let expected_duration = prepared
-        .as_ref()
-        .map_or(audio_info.duration_seconds, |audio| audio.duration);
     if (duration_seconds - expected_duration).abs() > 0.2 {
         return Err(crate::errors::tagged(
             "OUTPUT_VERIFY",
