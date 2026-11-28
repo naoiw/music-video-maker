@@ -428,10 +428,13 @@ pub(crate) fn prepare_looping_gif(
         .prefix(".music-video-maker-gif-")
         .suffix(".gif")
         .tempfile_in(parent)
-        .map_err(|error| errors::io_error("GIF の一時ファイルを作成できません", &error, "OUTPUT_IO"))?
+        .map_err(|error| {
+            errors::io_error("GIF の一時ファイルを作成できません", &error, "OUTPUT_IO")
+        })?
         .into_temp_path();
-    std::fs::write(&temporary, normalized)
-        .map_err(|error| errors::io_error("GIF の一時ファイルを書き込めません", &error, "OUTPUT_IO"))?;
+    std::fs::write(&temporary, normalized).map_err(|error| {
+        errors::io_error("GIF の一時ファイルを書き込めません", &error, "OUTPUT_IO")
+    })?;
     Ok(temporary)
 }
 
