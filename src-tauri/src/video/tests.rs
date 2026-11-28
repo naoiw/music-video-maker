@@ -438,6 +438,7 @@ fn validates_settings_and_generates_fit_filters() {
         fps: 60,
         crf: 16,
         fit: ImageFit::Cover,
+        encoder: Encoder::Cpu,
     };
     assert!(cover.validate().is_ok());
     assert!(cover.filter().contains("crop=1080:1920"));
@@ -494,6 +495,7 @@ fn encodes_custom_output_settings() {
                 fps: 24,
                 crf: 24,
                 fit: ImageFit::Contain,
+                encoder: Encoder::Cpu,
             },
         ),
         (
@@ -504,6 +506,7 @@ fn encodes_custom_output_settings() {
                 fps: 60,
                 crf: 16,
                 fit: ImageFit::Cover,
+                encoder: Encoder::Cpu,
             },
         ),
     ] {
@@ -769,6 +772,7 @@ fn accepts_every_supported_output_settings_combination() {
                         fps,
                         crf,
                         fit,
+                        encoder: Encoder::Cpu,
                     };
                     assert!(settings.validate().is_ok());
                     let args = encoder_args(
@@ -853,6 +857,7 @@ fn encodes_after_invalid_sources_and_verifies_published_file() {
         fps: 24,
         crf: 24,
         fit: ImageFit::Cover,
+        encoder: Encoder::Cpu,
     };
     let filters: Vec<audio_filters::FilterEntry> =
         serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#).unwrap();
@@ -1429,4 +1434,54 @@ fn rejects_wrong_streams_disguised_formats_and_recovers() {
     )
     .unwrap();
     assert!((info.duration_seconds - 1.2).abs() < 0.2);
+}
+
+
+// An explicitly unsupported choice must still produce a valid MP4 on CPU,
+// even on CI hosts without physical GPU access.
+#[test]
+#[ignore = "requires FFmpeg and FFprobe"]
+fn falls_back_to_cpu_for_unavailable_hardware() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio = dir.path().join("audio.wav");
+    let image = dir.path().join("cover.png");
+    let output = dir.path().join("fallback.mp4");
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1.2",
+            "-c:a",
+            "pcm_s16le",
+            audio.to_str().unwrap(),
+        ])
+        .unwrap();
+    image::RgbImage::new(64, 48).save(&image).unwrap();
+    let unavailable = if cfg!(target_os = "macos") {
+        Encoder::Nvenc
+    } else {
+        Encoder::Videotoolbox
+    };
+    let result = encode_video(
+        audio.to_str().unwrap(),
+        image.to_str().unwrap(),
+        output.to_str().unwrap(),
+        OutputSettings {
+            encoder: unavailable,
+            fit: ImageFit::Contain,
+            ..OutputSettings::default()
+        },
+        &[],
+        &[],
+        &EncodeJob::default(),
+    )
+    .unwrap();
+    assert_eq!(result.encoder, Encoder::Cpu);
+    assert!(result.fallback_reason.is_some());
+    assert!((result.duration_seconds - 1.2).abs() < 0.2);
+    assert!(output.is_file());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3);
 }

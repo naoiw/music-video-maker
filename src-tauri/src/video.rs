@@ -1,4 +1,5 @@
-use crate::{audio, audio_filters, encode_job, ffmpeg::Tool, visual};
+use crate::{audio, audio_filters, encode_job, encoder, ffmpeg::Tool, visual};
+use encoder::{Encoder, ProbeSpec};
 use encode_job::{EncodeJob, Phase};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -27,6 +28,8 @@ pub(crate) struct OutputSettings {
     fps: u32,
     crf: u32,
     fit: ImageFit,
+    #[serde(default)]
+    encoder: Encoder,
 }
 
 impl Default for OutputSettings {
@@ -37,6 +40,7 @@ impl Default for OutputSettings {
             fps: 30,
             crf: 20,
             fit: ImageFit::Blurred,
+            encoder: Encoder::Cpu,
         }
     }
 }
@@ -93,6 +97,9 @@ impl OutputSettings {
 pub(crate) struct VideoInfo {
     duration_seconds: f64,
     size_bytes: u64,
+    encoder: Encoder,
+    fallback_reason: Option<String>,
+    elapsed_seconds: f64,
 }
 
 const MAX_OVERLAYS: usize = 8;
@@ -245,6 +252,7 @@ pub(crate) fn encode_video(
     overlays: &[OverlayLayer],
     job: &EncodeJob,
 ) -> Result<VideoInfo, String> {
+    let started = std::time::Instant::now();
     job.check_cancelled()?;
     settings
         .validate()
@@ -368,47 +376,64 @@ pub(crate) fn encode_video(
         .to_str()
         .ok_or_else(|| "一時ファイルのパスを処理できません。".to_owned())?;
 
-    let args = encoder_args(
-        input,
-        visual_path,
-        source,
-        temp_path,
-        settings,
-        timing,
-        &prepared_overlays,
-    );
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let spec = ProbeSpec {
+        width: settings.width,
+        height: settings.height,
+        fps: settings.fps,
+        quality: settings.crf,
+    };
+    let (selected, reason) = encoder::select(settings.encoder, spec, job)?;
     let progress = if prepared.is_some() {
         (0.15, 0.85)
     } else {
         (0.0, 1.0)
     };
-    encode_job::run_ffmpeg(&args, job, Phase::Encoding, progress)?;
-    job.set_phase(Phase::Verifying);
-    job.check_cancelled()?;
-
-    let probe = Tool::Ffprobe.run(&[
-        "-v",
-        "error",
-        "-protocol_whitelist",
-        "file",
-        "-show_entries",
-        "stream=codec_name,codec_type,width,height,pix_fmt,r_frame_rate,duration:format=duration",
-        "-of",
-        "json",
-        "-i",
-        temp_path,
-    ])?;
-    let duration_seconds = validate_output(&probe.stdout, settings)
-        .map_err(|error| crate::errors::tagged("OUTPUT_VERIFY", error))?;
-    if (duration_seconds - expected_duration).abs() > 0.2 {
-        return Err(crate::errors::tagged(
-            "OUTPUT_VERIFY",
-            format!(
-                "動画の長さが音声と一致しません（動画 {duration_seconds:.3} 秒、音声 {expected_duration:.3} 秒）。"
-            ),
-        ));
-    }
+    let (duration_seconds, actual_encoder, fallback_reason) =
+        encoder::with_fallback(selected, reason, job, |encoder, fallback| {
+            job.begin_encoding_attempt(encoder, fallback, progress.0)?;
+            // Discard partial hardware output before a CPU retry.
+            if fallback {
+                std::fs::File::create(temp_path).map_err(|error| {
+                    crate::errors::io_error("一時ファイルを初期化できません", &error, "OUTPUT_IO")
+                })?;
+            }
+            let args = encoder_args(
+                input,
+                visual_path,
+                source,
+                temp_path,
+                OutputSettings { encoder, ..settings },
+                timing,
+                &prepared_overlays,
+            );
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            encode_job::run_ffmpeg(&args, job, Phase::Encoding, progress)?;
+            job.set_phase(Phase::Verifying);
+            job.check_cancelled()?;
+            let probe = Tool::Ffprobe.run(&[
+                "-v",
+                "error",
+                "-protocol_whitelist",
+                "file",
+                "-show_entries",
+                "stream=codec_name,codec_type,width,height,pix_fmt,r_frame_rate,duration:format=duration",
+                "-of",
+                "json",
+                "-i",
+                temp_path,
+            ])?;
+            let duration_seconds = validate_output(&probe.stdout, settings)
+                .map_err(|error| crate::errors::tagged("OUTPUT_VERIFY", error))?;
+            if (duration_seconds - expected_duration).abs() > 0.2 {
+                return Err(crate::errors::tagged(
+                    "OUTPUT_VERIFY",
+                    format!(
+                        "動画の長さが音声と一致しません（動画 {duration_seconds:.3} 秒、音声 {expected_duration:.3} 秒）。"
+                    ),
+                ));
+            }
+            Ok(duration_seconds)
+        })?;
     let size_bytes = std::fs::metadata(temp_path)
         .map_err(|error| {
             crate::errors::io_error("出力ファイルを確認できません", &error, "OUTPUT_IO")
@@ -422,6 +447,9 @@ pub(crate) fn encode_video(
     Ok(VideoInfo {
         duration_seconds,
         size_bytes,
+        encoder: actual_encoder,
+        fallback_reason,
+        elapsed_seconds: started.elapsed().as_secs_f64(),
     })
 }
 

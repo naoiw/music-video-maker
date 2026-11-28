@@ -2,6 +2,7 @@ mod audio;
 mod audio_filters;
 mod audio_preview;
 mod encode_job;
+mod encoder;
 mod errors;
 mod ffmpeg;
 mod settings;
@@ -58,6 +59,13 @@ async fn media_tool_status() -> Result<MediaToolStatus, String> {
     })
     .await
     .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn encoder_capabilities() -> Result<Vec<encoder::EncoderCapability>, String> {
+    tauri::async_runtime::spawn_blocking(encoder::detect)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -182,6 +190,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             runtime_info,
             media_tool_status,
+            encoder_capabilities,
             probe_audio,
             compile_audio_filters,
             render_audio_preview,
