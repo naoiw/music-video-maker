@@ -353,6 +353,88 @@ fn load_visual_inner(path: &str) -> Result<VisualInfo, String> {
     inspect_image(name, format, &bytes)
 }
 
+// Use the GIF demuxer's own loop timing. Older FFmpeg versions can compute
+// an incorrect pass duration when looping variable-delay GIFs via stream_loop.
+const GIF_LOOP_EXTENSION: &[u8] = b"\x21\xff\x0bNETSCAPE2.0\x03\x01\x00\x00\x00";
+
+fn gif_color_table_len(packed: u8) -> usize {
+    if packed & 0x80 != 0 {
+        3 << (usize::from(packed & 7) + 1)
+    } else {
+        0
+    }
+}
+
+fn gif_sub_blocks_end(bytes: &[u8], mut offset: usize) -> Option<usize> {
+    loop {
+        let len = usize::from(*bytes.get(offset)?);
+        offset += 1;
+        if len == 0 {
+            return Some(offset);
+        }
+        bytes.get(offset..offset + len)?;
+        offset += len;
+    }
+}
+
+fn normalize_gif_loop(bytes: &[u8]) -> Option<Vec<u8>> {
+    if !matches!(bytes.get(..6), Some(b"GIF87a" | b"GIF89a")) {
+        return None;
+    }
+    let mut offset = 13 + gif_color_table_len(*bytes.get(10)?);
+    let mut output = bytes.get(..offset)?.to_vec();
+    output[..6].copy_from_slice(b"GIF89a");
+    output.extend_from_slice(GIF_LOOP_EXTENSION);
+    loop {
+        let start = offset;
+        let block = *bytes.get(offset)?;
+        match block {
+            0x21 => {
+                let extension = *bytes.get(offset + 1)?;
+                offset = gif_sub_blocks_end(bytes, offset + 2)?;
+                let is_loop = extension == 0xff
+                    && (bytes[start..offset].starts_with(b"\x21\xff\x0bNETSCAPE2.0")
+                        || bytes[start..offset].starts_with(b"\x21\xff\x0bANIMEXTS1.0"));
+                if is_loop {
+                    continue;
+                }
+            }
+            0x2c => {
+                // Image descriptor, optional local color table, LZW code size,
+                // and image data sub-blocks. Copy these bytes unchanged.
+                let packed = *bytes.get(offset + 9)?;
+                offset = gif_sub_blocks_end(bytes, offset + 11 + gif_color_table_len(packed))?;
+            }
+            0x3b => {
+                output.push(block);
+                return Some(output);
+            }
+            _ => return None,
+        }
+        output.extend_from_slice(bytes.get(start..offset)?);
+    }
+}
+
+pub(crate) fn prepare_looping_gif(
+    info: &VisualInfo,
+    parent: &Path,
+) -> Result<tempfile::TempPath, String> {
+    let bytes = STANDARD
+        .decode(&info.preview_base64)
+        .map_err(|error| errors::tagged("INPUT_IMAGE", error))?;
+    let normalized = normalize_gif_loop(&bytes)
+        .ok_or_else(|| errors::tagged("INPUT_IMAGE", "GIF のブロック構造が無効です。"))?;
+    let temporary = tempfile::Builder::new()
+        .prefix(".music-video-maker-gif-")
+        .suffix(".gif")
+        .tempfile_in(parent)
+        .map_err(|error| errors::io_error("GIF の一時ファイルを作成できません", &error, "OUTPUT_IO"))?
+        .into_temp_path();
+    std::fs::write(&temporary, normalized)
+        .map_err(|error| errors::io_error("GIF の一時ファイルを書き込めません", &error, "OUTPUT_IO"))?;
+    Ok(temporary)
+}
+
 // Compose a static image once, using the same pixels for preview and export.
 // Image formats with alpha are composited on black before resizing.
 pub(crate) fn blurred_image(
@@ -447,6 +529,56 @@ mod tests {
             .write_to(&mut output, format)
             .unwrap();
         output.into_inner()
+    }
+
+    #[test]
+    fn normalizes_gif_repeat_without_reencoding_frames() {
+        use image::codecs::gif::{GifEncoder, Repeat};
+        use image::{AnimationDecoder, Delay, Frame, Rgba, RgbaImage};
+
+        for repeat in [None, Some(Repeat::Finite(1)), Some(Repeat::Infinite)] {
+            let mut bytes = Vec::new();
+            {
+                let mut encoder = GifEncoder::new(&mut bytes);
+                if let Some(repeat) = repeat {
+                    encoder.set_repeat(repeat).unwrap();
+                }
+                for (color, delay) in [([255, 0, 0, 255], 200), ([0, 0, 255, 255], 300)] {
+                    encoder
+                        .encode_frame(Frame::from_parts(
+                            RgbaImage::from_pixel(12, 8, Rgba(color)),
+                            0,
+                            0,
+                            Delay::from_numer_denom_ms(delay, 1),
+                        ))
+                        .unwrap();
+                }
+            }
+            let normalized = normalize_gif_loop(&bytes).unwrap();
+            assert_eq!(
+                normalized
+                    .windows(GIF_LOOP_EXTENSION.len())
+                    .filter(|window| *window == GIF_LOOP_EXTENSION)
+                    .count(),
+                1
+            );
+            assert_eq!(normalize_gif_loop(&normalized).unwrap(), normalized);
+            let frames = |data: &[u8]| {
+                image::codecs::gif::GifDecoder::new(Cursor::new(data))
+                    .unwrap()
+                    .into_frames()
+                    .collect_frames()
+                    .unwrap()
+            };
+            let original = frames(&bytes);
+            let prepared = frames(&normalized);
+            assert_eq!(original.len(), prepared.len());
+            for (left, right) in original.iter().zip(&prepared) {
+                assert_eq!(left.buffer(), right.buffer());
+                assert_eq!(left.delay(), right.delay());
+            }
+            assert!(normalize_gif_loop(&bytes[..bytes.len() - 1]).is_none());
+        }
     }
 
     #[test]

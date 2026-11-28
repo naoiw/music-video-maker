@@ -60,7 +60,7 @@ fn layered_arguments_preserve_order_paths_and_audio_mapping() {
     );
     assert!(args.windows(2).any(|pair| pair == ["-map", "[out1]"]));
     assert!(args.windows(2).any(|pair| pair == ["-map", "1:a:0"]));
-    assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "1"]));
+    assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "0"]));
     let graph = &args[args
         .iter()
         .position(|arg| arg == "-filter_complex")
@@ -153,7 +153,7 @@ fn arguments_keep_paths_separate_and_map_only_requested_streams() {
 }
 
 #[test]
-fn gif_arguments_ignore_embedded_loop_count() {
+fn gif_arguments_use_normalized_infinite_loop() {
     let args = encoder_args(
         "audio.mp3",
         "cover.gif",
@@ -164,8 +164,8 @@ fn gif_arguments_ignore_embedded_loop_count() {
         &[],
     );
     assert!(args.windows(2).any(|pair| pair == ["-f", "gif"]));
-    assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "1"]));
-    assert!(args.windows(2).any(|pair| pair == ["-stream_loop", "-1"]));
+    assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "0"]));
+    assert!(!args.iter().any(|arg| arg == "-stream_loop"));
     assert!(args.iter().any(|arg| arg.contains("gblur=sigma=")));
     assert!(args
         .iter()
@@ -366,12 +366,12 @@ fn encodes_gif_with_repeated_animation() {
                     if red {
                         assert!(
                             pixel[0] > 200 && pixel[2] < 50,
-                            "{name}/{mode}: {timestamp}"
+                            "{name}/{mode}: {timestamp}: {pixel:?}"
                         );
                     } else {
                         assert!(
                             pixel[2] > 200 && pixel[0] < 50,
-                            "{name}/{mode}: {timestamp}"
+                            "{name}/{mode}: {timestamp}: {pixel:?}"
                         );
                     }
                 }
