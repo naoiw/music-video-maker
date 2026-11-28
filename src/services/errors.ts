@@ -1,5 +1,5 @@
 export type ErrorOperation =
-  | "audio" | "image" | "preview" | "filter" | "output" | "encode"
+  | "audio" | "image" | "preview" | "analysis" | "filter" | "output" | "encode"
   | "cancel" | "runtime" | "settings" | "presets" | "drop";
 
 const guidance = {
@@ -27,6 +27,7 @@ const fallback: Record<ErrorOperation, string> = {
   audio: "音声を読み込めません。正常なMP3等の対応音声素材とファイルのアクセス権限を確認してください。",
   image: "画像を読み込めません。対応する映像素材の形式・容量・破損を確認してください。",
   preview: "試聴に失敗しました。素材・フィルタ・FFmpegの実行環境を確認して再試聴してください。",
+  analysis: "音声解析に失敗しました。素材（60分以下）・フィルタ・実行環境を確認してください。",
   filter: guidance.FILTER,
   output: "保存先を選択できません。フォルダの権限と空き容量を確認してください。",
   encode: "動画の生成に失敗しました。素材・設定・保存先を確認して再実行してください。",
@@ -38,7 +39,7 @@ const fallback: Record<ErrorOperation, string> = {
 };
 
 export const operationLabels: Record<ErrorOperation, string> = {
-  audio: "音声読み込み", image: "画像読み込み", preview: "音声試聴",
+  audio: "音声読み込み", image: "画像読み込み", preview: "音声試聴", analysis: "音声解析",
   filter: "フィルタ設定", output: "保存先選択", encode: "動画生成",
   cancel: "生成中断", runtime: "実行環境", settings: "設定保存・復元",
   presets: "プリセット", drop: "ドラッグ＆ドロップ",

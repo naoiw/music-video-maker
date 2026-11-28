@@ -59,3 +59,6 @@ Windowsのsetup.bat / build.batを維持し、macOS（Apple Silicon / Intel）�
 ## Post-MVP：GPUエンコード（#40）
 
 H.264/AAC MP4 の形式は維持し、CPU（既定）・自動・実機検出に成功したGPUを選択可能にする。Windows NVENC/QSV/AMF、macOS VideoToolbox、Linux NVENC/QSVを初期候補とし、VA-APIは対象外。試験エンコードで利用可否を判定し、実出力でも検証する。CPUフォールバックを1回に限定し、失敗時は不完全な出力を保存しない。GPU SDKの直接導入・配布は不要。速度・画質はハードウェア依存のため未保証。
+
+## Post-MVP：音声解析（#33・#34）
+原音・加工音の全曲波形（共通の時間・振幅軸）、サンプルピーク、RMS、0 dBFS超過数、同一条件のFFT平均パワースペクトラムを表示する。現行のフィルタチェーンを用い、音声素材・出力MP4を変更しない。解析は60分以下、8～48kHz、1～2ch。解析結果は一時的なUI表示のみ。動画に表示するビジュアライザーは#36で別実装する。

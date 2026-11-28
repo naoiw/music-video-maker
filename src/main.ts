@@ -3,6 +3,7 @@ import { reportError } from "./components/diagnostics";
 import { initializeAudioSource } from "./components/audio-source";
 import { initializeAudioFilters } from "./components/audio-filters";
 import { initializeAudioPreview } from "./components/audio-preview";
+import { initializeAudioAnalysis } from "./components/audio-analysis";
 import { initializePresets } from "./components/presets";
 import { initializeSettingsPersistence, restoreSettings } from "./components/settings";
 import { initializeSourceDrop } from "./components/source-drop";
@@ -36,7 +37,9 @@ async function initialize(): Promise<void> {
     }
     const available = Boolean(result.ffmpeg.version && result.ffprobe.version);
     const refreshFilters = initializeAudioFilters(available);
-    const refreshPreview = initializeAudioPreview(available);
+    const refreshAudioPreview = initializeAudioPreview(available);
+    const analysis = initializeAudioAnalysis(available, () => refreshExport());
+    const refreshPreview = () => { refreshAudioPreview(); analysis.refresh(); };
     const loadAudio = result.ffprobe.version ? initializeAudioSource(() => {
       refreshFilters();
       refreshPreview();
@@ -46,7 +49,7 @@ async function initialize(): Promise<void> {
       const audioStatus = document.querySelector<HTMLElement>("#audio-status");
       if (audioStatus) audioStatus.textContent = "FFprobeが必要です。実行環境を確認してください。";
     }
-    refreshExport = initializeExport(available, refreshPreview, layerEditor);
+    refreshExport = initializeExport(available, refreshPreview, layerEditor, analysis.isBusy);
     const applyFilterSettings = initializeSettingsPersistence(savedSettings, refreshFilters);
     await initializePresets(applyFilterSettings);
     // Failure to register native drag/drop must not disable the existing dialogs.
