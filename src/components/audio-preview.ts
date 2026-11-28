@@ -67,7 +67,7 @@ export function initializeAudioPreview(available: boolean): () => void {
       sourcePath = audio?.path ?? null;
       if (changed) start.value = "0";
       start.max = String(Math.max(0, Math.floor((audio?.durationSeconds ?? 0) - 0.1)));
-      invalidate(audio ? "試聴する音声を選択してください。" : "MP3を選択してください。");
+      invalidate(audio ? "試聴する音声を選択してください。" : "音声素材を選択してください。");
     } else {
       updateControls();
     }

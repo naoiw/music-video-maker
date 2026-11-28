@@ -12,7 +12,7 @@ const guidance = {
   TOOL_START: "FFmpegまたはFFprobeを起動できません。実行ファイルの権限や破損を確認してください。",
   TOOL_FEATURE: "FFmpegに必要なコーデックまたはフィルタがありません。対応するビルドを使用してください。",
   INVALID_MEDIA: "素材のデコードに失敗しました。破損していない対応形式の素材に変更してください。",
-  INPUT_AUDIO: "MP3を読み込めません。正常に再生できるローカルのMP3を選び直してください。",
+  INPUT_AUDIO: "音声を読み込めません。対応するローカルの音声・動画ファイルを選び直してください。",
   INPUT_IMAGE: "画像を読み込めません。PNG・JPEG・GIF（32 MiB以下、4000万画素以下）の正常な画像を選び直してください。",
   OUTPUT_PATH: "保存先が無効です。存在するフォルダ内のMP4ファイル名を指定してください。",
   OUTPUT_IO: "一時ファイルまたは出力ファイルを操作できません。保存先と一時フォルダの権限・空き容量を確認してください。",
@@ -24,7 +24,7 @@ const guidance = {
 } as const;
 
 const fallback: Record<ErrorOperation, string> = {
-  audio: "音声を読み込めません。正常なMP3とファイルのアクセス権限を確認してください。",
+  audio: "音声を読み込めません。正常なMP3等の対応音声素材とファイルのアクセス権限を確認してください。",
   image: "画像を読み込めません。PNG・JPEG・GIFの形式・容量・破損を確認してください。",
   preview: "試聴に失敗しました。素材・フィルタ・FFmpegの実行環境を確認して再試聴してください。",
   filter: guidance.FILTER,

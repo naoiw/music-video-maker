@@ -50,7 +50,7 @@ async function initialize(): Promise<void> {
     const applyFilterSettings = initializeSettingsPersistence(savedSettings, refreshFilters);
     await initializePresets(applyFilterSettings);
     // Failure to register native drag/drop must not disable the existing dialogs.
-    await initializeSourceDrop(loadAudio, loadVisual).catch(error => {
+    await initializeSourceDrop(loadAudio, loadVisual, layerEditor.load).catch(error => {
       const dropStatus = document.querySelector<HTMLElement>("#source-drop-status");
       if (dropStatus) dropStatus.textContent = reportError("drop", error);
     });

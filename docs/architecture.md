@@ -75,4 +75,4 @@ blurredモードはRust imageクレートで同一素材を背景cover・ガウ�
 - `video/output.rs`: 保存先と FFprobe の出力結果の検証。
 - `video/tests.rs`: 従来の単体・FFmpeg 結合テスト。
 
-#31・#32 の入力形式拡張とストリーム選択はまだ提供していない。
+音声入力は audio::AUDIO_FORMATS を FFprobe・試聴・音声加工・動画生成で共用し、最初の音声ストリームを明示的にマッピングする。映像入力拡張は後続の #31 で扱う。

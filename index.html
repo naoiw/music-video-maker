@@ -11,12 +11,12 @@
     <div class="column">
       <section class="panel" aria-labelledby="source-title">
         <h2 id="source-title">素材</h2>
-        <p id="source-drop-hint" class="muted" hidden>MP3・画像をウィンドウ内にドラッグ＆ドロップ</p>
+        <p id="source-drop-hint" class="muted" hidden>素材を使用したいエリアに1ファイルずつドラッグ＆ドロップ</p>
         <p id="source-drop-status" class="muted" role="status"></p>
-        <div class="source"><div><h3>音声</h3><p id="audio-name">MP3 · 未選択</p><p id="audio-details"></p><p id="audio-status" role="status"></p></div><button type="button" id="select-audio" disabled>選択</button></div>
-        <div class="source"><div><h3>ベース画像</h3><p id="visual-name">PNG / JPEG / GIF · 未選択</p><p id="visual-details"></p><p id="visual-status" role="status"></p></div><button type="button" id="select-visual" disabled>選択</button></div>
+        <div class="source" data-drop-target="audio"><div><h3>音声素材</h3><p id="audio-name">MP3 / WAV / FLAC / AAC / M4A / MP4 / WebM · 未選択</p><p id="audio-details"></p><p id="audio-status" role="status"></p></div><button type="button" id="select-audio" disabled>選択</button></div>
+        <div class="source" data-drop-target="visual"><div><h3>ベース画像</h3><p id="visual-name">PNG / JPEG / GIF · 未選択</p><p id="visual-details"></p><p id="visual-status" role="status"></p></div><button type="button" id="select-visual" disabled>選択</button></div>
         <fieldset id="overlay-editor" disabled>
-          <div class="source"><div><h3>追加レイヤー</h3><p>最大8枚 · 上が最前面</p></div><button type="button" id="add-overlay">追加</button></div>
+          <div class="source" data-drop-target="overlay"><div><h3>追加レイヤー</h3><p>最大8枚 · 上が最前面</p></div><button type="button" id="add-overlay">追加</button></div>
           <div id="overlay-list"></div>
           <p id="overlay-status" class="muted" role="status"></p>
         </fieldset>
@@ -110,7 +110,7 @@
           <input id="preview-start" type="range" min="0" max="0" step="1" value="0" disabled />
           <div class="preview-controls"><button disabled type="button" id="preview-original" aria-pressed="false">原音</button><button disabled type="button" id="preview-processed" aria-pressed="false">加工音</button></div>
           <audio id="audio-preview" controls preload="metadata" aria-label="音声プレビュー"></audio>
-          <p id="audio-preview-status" class="muted" role="status">MP3を選択してください。</p>
+          <p id="audio-preview-status" class="muted" role="status">音声素材を選択してください。</p>
         </div>
       </section>
       <section class="panel" aria-labelledby="export-title">
