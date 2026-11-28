@@ -3,14 +3,14 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { assertCoreLock, assertPublicationReview } from "./web-publication-gate.mjs";
 
 const lock = JSON.parse(await readFile(new URL("../web/core-lock.json",import.meta.url),"utf8"));
 const publish = process.argv.includes("--publish");
 const manifestPath = new URL("../web/public/core-manifest.json",import.meta.url);
 await rm(manifestPath,{force:true});
-if (lock.version !== "0.12.10") throw new Error("Unexpected core version");
-if (publish && (!lock.approved || !lock.review || !lock.registryIntegrity || !lock.coreJsSha256 || !lock.coreWasmSha256))
-  throw new Error("Publication blocked: record and review core hashes and license/security conditions in web/core-lock.json.");
+assertCoreLock(lock);
+if (publish) assertPublicationReview(lock);
 const digest = (algorithm, bytes, encoding="hex") => createHash(algorithm).update(bytes).digest(encoding);
 async function fetchBytes(url, max) {
   const response = await fetch(url,{redirect:"error",signal:AbortSignal.timeout(120000)});
@@ -24,7 +24,7 @@ const registry = JSON.parse(await fetchBytes("https://registry.npmjs.org/@ffmpeg
 const integrity = registry.dist?.integrity;
 if (registry.name !== "@ffmpeg/core" || registry.version !== version || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(integrity ?? ""))
   throw new Error("Invalid registry metadata");
-if (lock.registryIntegrity && integrity !== lock.registryIntegrity) throw new Error("Registry integrity changed");
+if (integrity !== lock.registryIntegrity) throw new Error("Registry integrity changed");
 const tarURL = "https://registry.npmjs.org/@ffmpeg/core/-/core-" + version + ".tgz";
 if (registry.dist.tarball !== tarURL) throw new Error("Unexpected tarball URL");
 const tar = await fetchBytes(tarURL,100*1024*1024);
@@ -39,7 +39,7 @@ try {
     const remote = await fetchBytes("https://cdn.jsdelivr.net/npm/@ffmpeg/core@"+version+"/dist/umd/"+filename,limit);
     const sha = digest("sha256",upstream);
     if (digest("sha256",remote) !== sha) throw new Error("CDN differs from registry tarball: " + filename);
-    if (lock[key] && lock[key] !== sha) throw new Error("Reviewed hash mismatch: " + filename);
+    if (lock[key] !== sha) throw new Error("Reviewed hash mismatch: " + filename);
     manifest[key] = sha;
   }
   await mkdir(new URL("../web/public/",import.meta.url),{recursive:true});

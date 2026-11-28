@@ -51,6 +51,9 @@ jobs:
       - name: Benchmark long 1080p browser encodes
         run: pnpm web:benchmark
       - run: git diff --exit-code -- pnpm-lock.yaml src-tauri/Cargo.lock
+      - name: Recheck reviewed publication artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+        run: node scripts/check-web-dist.mjs --publish
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
         with:

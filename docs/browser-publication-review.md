@@ -16,6 +16,7 @@
 | 実楽曲・ユーザーPC | 未確認 |
 | 対応ソース・ライセンスと結合形態 | 未確定 |
 | H.264/AACの特許 | 未確定 |
+| 公開審査の機械的ゲート | 構造化レビュー・固定ハッシュ・成果物照合を追加、CI確認待ち |
 | GitHub Pages実URL | 未公開・未確認 |
 
 ## ライセンスの確認
@@ -32,6 +33,39 @@
 - ただし x264 の4-cores、LAME のmasterなど可変ブランチ参照があり、公開npmバイナリとすべての依存ソースの厳密な対応は未立証。対応ソースの再現性を保証したとは扱わない。
 - [FFmpeg Security](https://ffmpeg.org/security.html) では5.1.5〜5.1.7で複数の脆弱性修正を列挙している。n5.1.4ベースの候補コアについて、修正の取り込み・使用するデコーダへの影響を確認するまで公開承認しない。ハッシュ固定、ブラウザサンドボックス、プロトコル制限だけで安全とは判断しない。新しいメンテナンス済みコアを利用できない場合は、WebCodecs等を検討する。
 - [FFmpeg Legal](https://ffmpeg.org/legal.html) はGPL有効時のライセンスと、配布バイナリに対応する正確なソースの重要性を説明している。現在の外部直接取得方式についても公開前に適合性を確認する必要がある。
+
+## 2026-11-28 再調査と判断
+
+- [公式リリース一覧](https://github.com/ffmpegwasm/ffmpeg.wasm/releases) と [main の core package.json](https://github.com/ffmpegwasm/ffmpeg.wasm/blob/main/packages/core/package.json) を確認。公式コアの新しい版は確認できず、0.12.10のまま。ラッパーの版はコアの更新を意味しない。
+- [FFmpeg Security](https://ffmpeg.org/security.html#FFmpeg-5.1) は5.1.5〜5.1.7での修正を列挙する。例: CVE-2024-35366（sbg demuxer）、CVE-2024-36613（DXA demuxer）、CVE-2025-59728（DASH）、CVE-2025-59731/59732/59733（EXR）。現在の強制入力形式・プロトコル制限は対象外形式への到達を抑える対策だが、すべての修正の取り込み、対象コードの組み込み状況、MP3/PNG/JPEG/GIFおよびフィルタ等の到達可能性は未確認。これらの例がアプリで悪用可能と断定せず、個別の影響評価と更新可能性の確認を要求する。
+- [ASFのGPL互換性説明](https://www.apache.org/licenses/GPL-compatibility) はApache-2.0とGPLv3の互換性を説明する。[GNU GPL FAQ](https://www.gnu.org/licenses/gpl-faq.html) の結合・集合物に関する説明も参照。専用WorkerでコアAPIを呼ぶ構成を単なる独立プログラムと断定できず、正確な対応ソースと配布時の条件は引き続き未解決。ライセンス変更は行わない。
+- **判断: 現コアは技術検証を継続可能だが、一般公開は保留。** 固定版やCI成功だけでは公開審査の代替にならない。
+
+### 代替方式の比較
+
+| 方式 | 利点 | 残る課題 |
+| --- | --- | --- |
+| 現行の公式WASM | 実装・CI資産を活用 | 対応ソース、GPL結合・配布、修正の追跡が未解決 |
+| 更新したWASMの独自ビルド | 修正・ビルド元を管理できる可能性 | コア非配布方針と衝突しうる。配布元、ソース、維持コスト、GPL・特許を再評価 |
+| WebCodecs + Web Audio + MP4 muxer | ブラウザのコーデックを利用でき、FFmpegコアを不要にできる可能性 | H.264/AACの実機対応、MP4 mux、GIF時刻・ぼかし・7フィルタの同等性、特許、第三者ライセンスを検証 |
+
+[MDN WebCodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API) と [Codec selection](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API/Codec_selection) を参照。WebCodecsだけではMP4コンテナの生成を完結できない。候補の [Mediabunny](https://mediabunny.dev/) はMPL-2.0を掲げるが採用は未決定で、ライセンス・依存関係は採用時に審査する。次の技術評価ではまずWindows Chrome/EdgeのH.264/AACサポート、最小MP4生成、実測を確認し、現機能を維持できる見込みを判断する。
+
+## 構造化公開ゲート
+
+従来のtruthyなreview確認を廃止。scripts/web-publication-gate.mjsは試験時もコア版・SHA-512/SHA-256の形式と固定値を必須とする。公開時はapprovedが厳密にtrueであり、reviewのschemaVersion=1、reviewer、reviewedOn（YYYY-MM-DD）、decisionReference（明示的な承認記録）、core（lockのversion/registryIntegrity/coreJsSha256/coreWasmSha256の完全一致）、itemsを要求する。itemsの必須キーは以下の通り。それぞれ status=accepted、具体的な証跡を示す非空の evidence を必要とする。
+
+| キー | 審査対象 |
+| --- | --- |
+| correspondingSource | 正確な対応ソースと依存ビルド |
+| licenseAndDistribution | 結合・配布条件とライセンス |
+| codecPatents | H.264/AACの特許条件 |
+| security | 既知脆弱性の修正・影響評価と更新方針 |
+| cdnAndPrivacy | CDN利用条件・プライバシー |
+| thirdPartyNotices | 完全な第三者表示・ソース提供条件 |
+| browserValidation | 実楽曲・対象PC・実用性能・ネットワーク検証 |
+
+準備前と公開成果物アップロード前の両方で検査する。後者はビルド済みmanifestと承認済みlockの一致および第三者表示ファイルの存在を検証する。空のreviewや文字列、未解決項目、ハッシュ変更、成果物差し替えを拒否する。暫定の第三者表示ページは追加するが、表示の完全性を証明するものではない。機械的な検査は証跡の真実性や法的妥当性を判断できない。全項目を実際に審査して記録するまで approved=false / review=null を維持する。試験用の正例は実際の承認ではない。
 
 ## 入力検証の追加対策
 
