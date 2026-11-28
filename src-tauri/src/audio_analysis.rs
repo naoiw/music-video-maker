@@ -81,7 +81,9 @@ impl Summary {
                     // Merge complete adjacent buckets, preserving their extrema.
                     self.waveform = self
                         .waveform
-                        .chunks_exact(2)
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
                         .map(|pair| Envelope {
                             min: pair[0].min.min(pair[1].min),
                             max: pair[0].max.max(pair[1].max),
@@ -159,8 +161,10 @@ fn read_pcm(mut reader: impl Read, info: &audio::AudioInfo) -> Result<Track, Str
         samples.clear();
         samples.extend(
             buffer[..filled]
-                .chunks_exact(4)
-                .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four bytes"))),
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|&bytes| f32::from_le_bytes(bytes)),
         );
         summary.add(&samples)?;
         if filled < buffer.len() {
