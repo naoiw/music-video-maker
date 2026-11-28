@@ -64,7 +64,7 @@ try{
   }
   await call("Network.enable");await call("Page.enable");await call("Page.navigate",{url:base+"/"});
   await wait(()=>evaluate("typeof globalThis.runProbe==='function'"));
-  const browserName=(await call("Browser.getVersion")).product;
+  const browserName=(await call("Browser.getVersion")).product+" / "+(process.env.CHROME_BIN?.toLowerCase().includes("msedge")?"Edge":"Chrome");
   const reports=[];
   for(const [width,height,seconds] of [[1280,720,2],[1920,1080,30]]){
     const result=await evaluate("runProbe("+[width,height,seconds].join(",")+")");
@@ -86,7 +86,7 @@ try{
         if(v.codec_name!=="h264"||v.width!==width||v.height!==height||Number(v.nb_frames)!==seconds*30||
            !Number.isFinite(Number(v.duration))||Math.abs(Number(v.duration)-seconds)>0.05)throw Error("Invalid AVC track");
         for(const [time,color] of [[0.5,0],[1.5,2]]){
-          const pixel=run("ffmpeg",["-v","error","-ss",String(time),"-i",file,"-map","0:v:0","-frames:v","1","-vf","scale=1:1,format=rgb24","-f","rawvideo","-"]);
+          const pixel=run("ffmpeg",["-v","error","-ss",String(time),"-i",file,"-map","0:v:0","-frames:v","1","-vf","scale=1:1,format=rgb24","-threads","1","-pix_fmt","rgb24","-f","rawvideo","-"]);
           if(pixel.length!==3||pixel[color]<180||pixel[2-color]>80)throw Error("Incorrect decoded video color");
         }
       }

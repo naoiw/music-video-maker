@@ -74,10 +74,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Probe native WebCodecs in Chrome and Edge
         run: |
-          $browsers = @(
+          $chrome = @(
             (Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'),
-            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/Edge/Application/msedge.exe')
-          )
+            (Join-Path ${env:ProgramFiles(x86)} 'Google/Chrome/Application/chrome.exe')
+          ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          $edge = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/Edge/Application/msedge.exe'),
+            (Join-Path $env:ProgramFiles 'Microsoft/Edge/Application/msedge.exe')
+          ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (!$chrome -or !$edge) { throw 'Expected Chrome and Edge installations were not found.' }
+          $browsers = @($chrome,$edge)
           foreach ($browser in $browsers) {
             if (!(Test-Path -LiteralPath $browser)) { throw "Missing expected browser: $browser" }
             $env:CHROME_BIN = $browser

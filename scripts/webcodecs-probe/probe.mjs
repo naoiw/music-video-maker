@@ -5,10 +5,9 @@ const videoConfig=(width,height)=>({codec:"avc1.420028",width,height,framerate:3
 async function support(kind,config){
   const Encoder=kind==="video"?globalThis.VideoEncoder:globalThis.AudioEncoder;
   if(!Encoder||typeof Encoder.isConfigSupported!=="function")return {supported:false,reason:"API unavailable"};
-  try{
-    const result=await Encoder.isConfigSupported(config);
-    return {supported:result.supported===true,reason:result.supported?"supported":"configuration unsupported"};
-  }catch(e){return {supported:false,reason:String(e)};}
+  const result=await Encoder.isConfigSupported(config);
+  if(typeof result.supported!=="boolean")throw Error("Invalid codec support response");
+  return {supported:result.supported,reason:result.supported?"supported":"configuration unsupported"};
 }
 function copyDescription(value){
   return value?new Uint8Array(value instanceof ArrayBuffer?value.slice(0):new Uint8Array(value.buffer,value.byteOffset,value.byteLength).slice()):null;
