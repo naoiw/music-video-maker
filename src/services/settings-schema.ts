@@ -8,6 +8,7 @@ export const settingsFields = {
   fps: { kind: "choice", initial: "30", options: ["24", "30", "60"] },
   fit: { kind: "choice", initial: "blurred", options: ["blurred", "contain", "cover"] },
   quality: { kind: "choice", initial: "20", options: ["16", "20", "24"] },
+  encoder: { kind: "choice", initial: "cpu", options: ["cpu", "auto", "nvenc", "qsv", "amf", "videotoolbox"] },
   "noise-enabled": { kind: "boolean", initial: false },
   "noise-reduction": { kind: "number", initial: 6, min: 1, max: 30, step: 1 },
   "noise-floor": { kind: "number", initial: -50, min: -80, max: -20, step: 1 },
@@ -33,15 +34,18 @@ export type SettingValue = string | boolean | number;
 export type SettingsValues = Record<SettingId, SettingValue>;
 export const settingsIds = Object.keys(settingsFields) as SettingId[];
 export const SETTINGS_VERSION = 1;
-export const outputIds = ["resolution", "fps", "fit", "quality"] as const;
+export const outputIds = ["resolution", "fps", "fit", "quality", "encoder"] as const;
 export type OutputId = (typeof outputIds)[number];
 export type Fit = (typeof settingsFields.fit.options)[number];
+export type Encoder = (typeof settingsFields.encoder.options)[number];
+export type ActualEncoder = Exclude<Encoder, "auto">;
 export interface OutputSettings {
   width: number;
   height: number;
   fps: number;
   crf: number;
   fit: Fit;
+  encoder: Encoder;
 }
 export function defaultSettings(): SettingsValues {
   return Object.fromEntries(settingsIds.map(id => [id, settingsFields[id].initial])) as SettingsValues;
@@ -69,7 +73,7 @@ function validValue(field: Field, value: unknown): value is SettingValue {
 export function parseOutputSettings(value: unknown): OutputSettings | null {
   if (!isRecord(value) || !outputIds.every(id => Object.hasOwn(value,id) && validValue(settingsFields[id], value[id]))) return null;
   const [width,height] = (value.resolution as string).split("x").map(Number);
-  return { width, height, fps:Number(value.fps), crf:Number(value.quality), fit:value.fit as Fit };
+  return { width, height, fps:Number(value.fps), crf:Number(value.quality), fit:value.fit as Fit, encoder:value.encoder as Encoder };
 }
 
 /** Validate static UI bounds. Sample-rate-dependent limits are checked at use time. */
@@ -88,6 +92,10 @@ export function parseSettings(raw: string): SettingsValues | null {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed) || parsed.version !== SETTINGS_VERSION) return null;
+    // Older v1 settings lack only the encoder field. Preserve every other value.
+    if (isRecord(parsed.values) && !Object.hasOwn(parsed.values, "encoder")) {
+      return validateSettings({ ...parsed.values, encoder: "cpu" });
+    }
     return validateSettings(parsed.values);
   } catch {
     return null;

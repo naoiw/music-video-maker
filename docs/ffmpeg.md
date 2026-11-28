@@ -7,3 +7,5 @@
 FFmpeg は外部プロセスとして起動し、アプリからリンクしない。リポジトリ・Releases・CI Artifact では FFmpeg を再配布しない。各ソフトウェアのライセンスを区別する。FFmpeg の詳細は https://ffmpeg.org/legal.html を参照。
 
 macOSはHomebrewのffmpeg-full、Ubuntuはaptのffmpegを基本とする。setup.shの機能検査で必要なエンコーダ・フィルタを確認し、run.shからシェルのPATHを引き継いで起動する。CIのmacOS/Linuxは各OSのパッケージを用いるためWindowsの固定ビルドとはバージョンが異なる場合がある。
+
+#40 のGPUエンコードはオプション。FFmpegが h264_nvenc / h264_qsv / h264_amf / h264_videotoolbox を備えていても、実際の利用には対応するGPU/ドライバが必要。ソースのみの公開方針は維持し、GPU SDKや追加のバイナリを同梱しない。CPU libx264 は引き続き必須。

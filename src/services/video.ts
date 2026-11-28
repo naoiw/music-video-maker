@@ -3,7 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import type { FilterChain } from "./audio-filters";
 import type { OverlayLayer } from "./layers";
 
-import type { OutputSettings } from "./settings-schema";
+import type { ActualEncoder, OutputSettings } from "./settings-schema";
 export type { OutputSettings } from "./settings-schema";
 
 export interface EncodeProgress {
@@ -11,11 +11,26 @@ export interface EncodeProgress {
   durationSeconds: number;
   processedSeconds: number;
   cancelled: boolean;
+  encoder: ActualEncoder | null;
+  fallback: boolean;
 }
 
 export interface VideoInfo {
   durationSeconds: number;
   sizeBytes: number;
+  encoder: ActualEncoder;
+  fallbackReason: string | null;
+  elapsedSeconds: number;
+}
+
+export interface EncoderCapability {
+  encoder: Exclude<ActualEncoder, "cpu">;
+  available: boolean;
+  reason: string | null;
+}
+
+export function getEncoderCapabilities(): Promise<EncoderCapability[]> {
+  return invoke<EncoderCapability[]>("encoder_capabilities");
 }
 
 export async function selectOutput(defaultName: string): Promise<string | null> {
