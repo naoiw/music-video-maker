@@ -7,7 +7,7 @@ import { initializePresets } from "./components/presets";
 import { initializeSettingsPersistence, restoreSettings } from "./components/settings";
 import { initializeSourceDrop } from "./components/source-drop";
 import { initializeExport } from "./components/export";
-import { initializeVisualSource } from "./components/visual-source";
+import { getSelectedVisual, initializeVisualSource } from "./components/visual-source";
 import { initializeLayerEditor } from "./components/layer-editor";
 import { getMediaToolStatus, getRuntimeInfo } from "./services/runtime";
 
@@ -28,7 +28,7 @@ async function initialize(): Promise<void> {
     const savedSettings = await restoreSettings();
     let refreshExport = (): void => {};
     const loadVisual = initializeVisualSource(() => refreshExport());
-    initializeLayerEditor(() => refreshExport());
+    const layerEditor = initializeLayerEditor(() => getSelectedVisual() !== null, () => refreshExport());
     const result = await getMediaToolStatus();
     if (!result) {
       media.textContent = "メディア処理環境を取得できません。";
@@ -46,7 +46,7 @@ async function initialize(): Promise<void> {
       const audioStatus = document.querySelector<HTMLElement>("#audio-status");
       if (audioStatus) audioStatus.textContent = "FFprobeが必要です。実行環境を確認してください。";
     }
-    refreshExport = initializeExport(available, refreshPreview);
+    refreshExport = initializeExport(available, refreshPreview, layerEditor);
     const applyFilterSettings = initializeSettingsPersistence(savedSettings, refreshFilters);
     await initializePresets(applyFilterSettings);
     // Failure to register native drag/drop must not disable the existing dialogs.
