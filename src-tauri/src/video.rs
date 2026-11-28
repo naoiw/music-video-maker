@@ -165,7 +165,10 @@ impl VisualKind {
             "PNG" => Ok(Self::Png),
             "JPEG" => Ok(Self::Jpeg),
             "GIF" => Ok(Self::Gif),
-            _ => Err(crate::errors::tagged("INPUT_IMAGE", "非対応の画像形式です。")),
+            _ => Err(crate::errors::tagged(
+                "INPUT_IMAGE",
+                "非対応の画像形式です。",
+            )),
         }
     }
 }
@@ -327,11 +330,7 @@ fn encoder_args(
     } else {
         args.push("-shortest".into());
     }
-    args.extend(
-        ["-f", "mp4", temporary_path]
-            .into_iter()
-            .map(str::to_owned),
-    );
+    args.extend(["-f", "mp4", temporary_path].into_iter().map(str::to_owned));
     args
 }
 
@@ -740,7 +739,12 @@ mod tests {
             .collect();
         assert_eq!(
             paths,
-            ["base.png", "music.mp3", first.path.as_str(), second.path.as_str()]
+            [
+                "base.png",
+                "music.mp3",
+                first.path.as_str(),
+                second.path.as_str()
+            ]
         );
         assert!(args.windows(2).any(|pair| pair == ["-map", "[out1]"]));
         assert!(args.windows(2).any(|pair| pair == ["-map", "1:a:0"]));
