@@ -87,7 +87,49 @@ fn tagged_duration(tags: &std::collections::HashMap<String, String>) -> Option<f
     (parts.next().is_none() && total.is_finite() && total > 0.0).then_some(total)
 }
 
-fn parse_info(name: String, bytes: &[u8]) -> Result<AudioInfo, String> {
+// Decode to a null sink if the demuxer cannot provide the selected track's
+// duration. A container duration can belong to a longer, unrelated video.
+// Raw AAC duration estimates can also drift with variable bit rates.
+fn measure_audio_duration(path: &str) -> Result<f64, String> {
+    let output = Tool::Ffmpeg.run(&[
+        "-v",
+        "error",
+        "-nostdin",
+        "-xerror",
+        "-nostats",
+        "-stats_period",
+        "3600",
+        "-progress",
+        "pipe:1",
+        "-protocol_whitelist",
+        "file",
+        "-format_whitelist",
+        AUDIO_FORMATS,
+        "-i",
+        path,
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-sn",
+        "-dn",
+        "-af",
+        "asetpts=N/SR/TB",
+        "-c:a",
+        "pcm_s16le",
+        "-f",
+        "null",
+        "-",
+    ])?;
+    let progress = String::from_utf8_lossy(&output.stdout);
+    progress
+        .lines()
+        .rev()
+        .find_map(|line| positive_duration(line.strip_prefix("out_time_us=")))
+        .map(|value| value / 1_000_000.0)
+        .ok_or_else(|| "音声トラックの再生時間を取得できません。".to_owned())
+}
+
+fn parse_info(name: String, bytes: &[u8], path: Option<&str>) -> Result<AudioInfo, String> {
     let probe: ProbeResult =
         serde_json::from_slice(bytes).map_err(|error| format!("FFprobe JSON: {error}"))?;
     let stream = probe
@@ -103,10 +145,8 @@ fn parse_info(name: String, bytes: &[u8]) -> Result<AudioInfo, String> {
         return Err("拡張子と実際の音声形式が一致しないか、非対応のコーデックです。".into());
     }
 
-    let duration_seconds = positive_duration(stream.duration.as_deref())
-        .or_else(|| tagged_duration(&stream.tags))
-        .or_else(|| positive_duration(probe.format.duration.as_deref()))
-        .ok_or_else(|| "再生時間を取得できません。".to_owned())?;
+    let stream_duration =
+        positive_duration(stream.duration.as_deref()).or_else(|| tagged_duration(&stream.tags));
     let sample_rate = stream
         .sample_rate
         .as_deref()
@@ -134,6 +174,22 @@ fn parse_info(name: String, bytes: &[u8]) -> Result<AudioInfo, String> {
     if !(8_000..=48_000).contains(&sample_rate) || !(1..=2).contains(&channels) {
         return Err("音声は 8～48 kHz、モノラルまたはステレオに対応しています。".into());
     }
+
+    let is_container = matches!(ext.as_str(), "mp4" | "m4a" | "mov" | "mkv" | "webm");
+    let duration_seconds = match path {
+        Some(path) if ext == "aac" || (is_container && stream_duration.is_none()) => {
+            measure_audio_duration(path)?
+        }
+        _ => stream_duration
+            .or_else(|| {
+                if is_container {
+                    None
+                } else {
+                    positive_duration(probe.format.duration.as_deref())
+                }
+            })
+            .ok_or_else(|| "再生時間を取得できません。".to_owned())?,
+    };
 
     Ok(AudioInfo {
         name,
@@ -181,7 +237,7 @@ fn probe_audio_inner(path: &str) -> Result<AudioInfo, String> {
         "-i",
         path,
     ])?;
-    parse_info(name, &output.stdout)
+    parse_info(name, &output.stdout, Some(path))
 }
 
 #[cfg(test)]
@@ -195,7 +251,7 @@ mod tests {
                         "channels":2,"duration":"181.5","bit_rate":"192000"}],
             "format":{"format_name":"mp3","duration":"181.6"}
         }"#;
-        let info = parse_info("song.mp3".into(), data).unwrap();
+        let info = parse_info("song.mp3".into(), data, None).unwrap();
         assert_eq!(info.name, "song.mp3");
         assert_eq!(info.duration_seconds, 181.5);
         assert_eq!(info.sample_rate, 44_100);
@@ -210,7 +266,7 @@ mod tests {
                         "channels":1,"duration":"N/A"}],
             "format":{"format_name":"mp3","duration":"42.5","bit_rate":"128000"}
         }"#;
-        let info = parse_info("mono.mp3".into(), data).unwrap();
+        let info = parse_info("mono.mp3".into(), data, None).unwrap();
         assert_eq!(info.duration_seconds, 42.5);
         assert_eq!(info.channels, 1);
         assert_eq!(info.bit_rate, Some(128_000));
@@ -224,7 +280,7 @@ mod tests {
             r#"{"format":{"format_name":"mp3"}}"#,
             "not JSON",
         ] {
-            assert!(parse_info("invalid.mp3".into(), data.as_bytes()).is_err());
+            assert!(parse_info("invalid.mp3".into(), data.as_bytes(), None).is_err());
         }
     }
 
@@ -252,8 +308,15 @@ mod tests {
         let data = br#"{"streams":[{"codec_name":"opus","sample_rate":"48000","channels":2,
             "tags":{"DURATION":"00:00:02.500000000"}}],
             "format":{"format_name":"matroska,webm","duration":"8.0"}}"#;
-        let info = parse_info("song.webm".into(), data).unwrap();
+        let info = parse_info("song.webm".into(), data, None).unwrap();
         assert_eq!(info.duration_seconds, 2.5);
+    }
+
+    #[test]
+    fn does_not_use_unrelated_container_duration() {
+        let data = br#"{"streams":[{"codec_name":"opus","sample_rate":"48000","channels":1}],
+            "format":{"format_name":"matroska,webm","duration":"8.0"}}"#;
+        assert!(parse_info("song.webm".into(), data, None).is_err());
     }
 
     #[test]

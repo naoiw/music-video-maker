@@ -450,6 +450,71 @@ mod tests {
     }
 
     #[test]
+    fn rejects_animated_webp_flags_and_chunks() {
+        assert!(is_animated_webp(b"RIFF0000WEBPVP8X\x0a\x00\x00\x00\x02"));
+        assert!(is_animated_webp(b"RIFF0000WEBPANIM\x06\x00\x00\x00"));
+        assert!(is_animated_webp(b"RIFF0000WEBPANMF\x10\x00\x00\x00"));
+        assert!(!is_animated_webp(b"RIFF0000WEBPVP8X\x0a\x00\x00\x00\x10"));
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with libwebp_anim, libx264 and FFprobe"]
+    fn distinguishes_animated_webp_and_returns_silent_gif_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let webp = dir.path().join("animated.webp");
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=160x90:r=10:d=1",
+                "-c:v",
+                "libwebp_anim",
+                webp.to_str().unwrap(),
+            ])
+            .unwrap();
+        let error = load_visual(webp.to_str().unwrap()).unwrap_err();
+        assert!(error.contains("アニメーション WebP は未対応"));
+
+        let video = dir.path().join("preview.mp4");
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=640x360:r=10:d=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=880:duration=1",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                video.to_str().unwrap(),
+            ])
+            .unwrap();
+        let info = load_visual(video.to_str().unwrap()).unwrap();
+        assert_eq!(info.mime_type, "image/gif");
+        assert_eq!((info.width, info.height), (640, 360));
+        let bytes = STANDARD.decode(info.preview_base64).unwrap();
+        assert!(bytes.starts_with(b"GIF89a"));
+        assert!(bytes.windows(11).any(|window| window == b"NETSCAPE2.0"));
+        use image::AnimationDecoder;
+        let decoder = image::codecs::gif::GifDecoder::new(Cursor::new(bytes)).unwrap();
+        let frames = decoder.into_frames().collect_frames().unwrap();
+        assert!(frames.len() > 1);
+        assert!(frames.len() <= 80);
+        assert!(frames[0].buffer().width() <= 360);
+        assert!(frames[0].buffer().height() <= 360);
+        assert_ne!(frames[0].buffer(), frames.last().unwrap().buffer());
+    }
+
+    #[test]
     fn reads_supported_image_formats() {
         for (format, label, mime) in [
             (ImageFormat::Png, "PNG", "image/png"),

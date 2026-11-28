@@ -1118,3 +1118,295 @@ fn encodes_extended_visual_inputs_and_silent_video_previews() {
     assert!(visual::load_visual(audio.to_str().unwrap()).is_err());
     assert!(audio::probe_audio(webp.to_str().unwrap()).is_err());
 }
+
+fn tone_amplitude(path: &Path, frequency: f64) -> f64 {
+    let output = Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-ss",
+            "0.5",
+            "-i",
+            path.to_str().unwrap(),
+            "-map",
+            "0:a:0",
+            "-t",
+            "1",
+            "-ac",
+            "1",
+            "-ar",
+            "48000",
+            "-c:a",
+            "pcm_f32le",
+            "-f",
+            "f32le",
+            "-",
+        ])
+        .unwrap();
+    let (samples, remainder) = output.stdout.as_chunks::<4>();
+    assert!(remainder.is_empty() && samples.len() > 20_000);
+    let (mut sin, mut cos) = (0.0, 0.0);
+    for (index, sample) in samples.iter().enumerate() {
+        let value = f64::from(f32::from_le_bytes(*sample));
+        let angle = std::f64::consts::TAU * frequency * index as f64 / 48_000.0;
+        sin += value * angle.sin();
+        cos += value * angle.cos();
+    }
+    2.0 * sin.hypot(cos) / samples.len() as f64
+}
+
+#[test]
+#[ignore = "requires FFmpeg with libx264, libvpx-vp9, libopus, AAC and FFprobe"]
+fn combines_independent_video_layers_and_uses_only_selected_audio() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio = dir.path().join("audio.webm");
+    // A live WebM has neither stream nor container duration metadata.
+    // The unrelated video is longer than the selected 1.6 s audio stream.
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=white:s=160x90:d=4",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1.6",
+            "-c:v",
+            "libvpx-vp9",
+            "-c:a",
+            "libopus",
+            "-live",
+            "1",
+            audio.to_str().unwrap(),
+        ])
+        .unwrap();
+    let info = audio::probe_audio(audio.to_str().unwrap()).unwrap();
+    assert!((info.duration_seconds - 1.6).abs() < 0.05);
+    let base = dir.path().join("base.mp4");
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=green:s=160x90:d=3",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=1760:sample_rate=48000:duration=3",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            base.to_str().unwrap(),
+        ])
+        .unwrap();
+    let lower = dir.path().join("lower.mp4");
+    let upper = dir.path().join("upper.mp4");
+    for (path, first, second, frequency) in [
+        (
+            &lower,
+            "color=red:s=160x90:r=10:d=0.4",
+            "color=blue:s=160x90:r=10:d=0.4",
+            "sine=frequency=880:duration=2.6",
+        ),
+        (
+            &upper,
+            "color=yellow:s=160x90:r=10:d=0.6",
+            "color=magenta:s=160x90:r=10:d=0.6",
+            "sine=frequency=1320:duration=1.2",
+        ),
+    ] {
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                first,
+                "-f",
+                "lavfi",
+                "-i",
+                second,
+                "-f",
+                "lavfi",
+                "-i",
+                frequency,
+                "-filter_complex",
+                "[0:v][1:v]concat=n=2:v=1:a=0[v]",
+                "-map",
+                "[v]",
+                "-map",
+                "2:a:0",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                path.to_str().unwrap(),
+            ])
+            .unwrap();
+    }
+    let first = overlay(lower.to_str().unwrap(), 100);
+    let mut second = overlay(upper.to_str().unwrap(), 100);
+    second.x = 5000;
+    second.width = 2500;
+    let output = dir.path().join("combined.mp4");
+    let filters: Vec<audio_filters::FilterEntry> =
+        serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#).unwrap();
+    let result = encode_video(
+        audio.to_str().unwrap(),
+        base.to_str().unwrap(),
+        output.to_str().unwrap(),
+        OutputSettings {
+            fit: ImageFit::Contain,
+            ..OutputSettings::default()
+        },
+        &filters,
+        &[first, second],
+        &EncodeJob::default(),
+    )
+    .unwrap();
+    assert!((result.duration_seconds - 1.6).abs() < 0.2);
+    for (time, red) in [
+        ("0.2", true),
+        ("0.55", false),
+        ("1.05", true),
+        ("1.4", false),
+    ] {
+        let pixel = sample_color_at(&output, time, "crop=2:2:700:540,format=rgb24");
+        assert_eq!(pixel.len(), 12);
+        if red {
+            assert!(pixel[0] > 150 && pixel[2] < 100, "lower {time}");
+        } else {
+            assert!(pixel[2] > 150 && pixel[0] < 100, "lower {time}");
+        }
+    }
+    for (time, yellow) in [("0.2", true), ("0.85", false), ("1.4", true)] {
+        let pixel = sample_color_at(&output, time, "crop=2:2:1150:540,format=rgb24");
+        assert_eq!(pixel.len(), 12);
+        assert!(pixel[0] > 150, "upper {time}");
+        if yellow {
+            assert!(pixel[1] > 150 && pixel[2] < 100, "upper {time}");
+        } else {
+            assert!(pixel[2] > 150 && pixel[1] < 100, "upper {time}");
+        }
+    }
+    let corner = sample_color_at(&output, "1.4", "crop=2:2:20:20,format=rgb24");
+    assert!(corner[1] > 90 && corner[0] < 40 && corner[2] < 40);
+    // 440 Hz is the only allowed audio, reduced by the selected gain filter.
+    let wanted = tone_amplitude(&output, 440.0);
+    assert!((0.04..0.09).contains(&wanted), "{wanted}");
+    for unwanted in [880.0, 1320.0, 1760.0] {
+        assert!(tone_amplitude(&output, unwanted) < 0.01, "{unwanted}");
+    }
+}
+
+#[test]
+#[ignore = "requires FFmpeg with libx264, AAC and FFprobe"]
+fn rejects_wrong_streams_disguised_formats_and_recovers() {
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("video-only.mp4");
+    let audio = dir.path().join("audio-only.mp4");
+    let broken = dir.path().join("broken.mp4");
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=blue:s=160x90:d=0.5",
+            "-c:v",
+            "libx264",
+            video.to_str().unwrap(),
+        ])
+        .unwrap();
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=32000:duration=1.2",
+            "-ac",
+            "2",
+            "-c:a",
+            "aac",
+            audio.to_str().unwrap(),
+        ])
+        .unwrap();
+    std::fs::write(&broken, b"not a video").unwrap();
+    assert!(audio::probe_audio(video.to_str().unwrap()).is_err());
+    assert!(visual::load_visual(audio.to_str().unwrap()).is_err());
+    assert!(audio::probe_audio(broken.to_str().unwrap()).is_err());
+    assert!(visual::load_visual(broken.to_str().unwrap()).is_err());
+    let disguised = dir.path().join("disguised.flac");
+    std::fs::copy(&audio, &disguised).unwrap();
+    assert!(audio::probe_audio(disguised.to_str().unwrap()).is_err());
+    let disguised = dir.path().join("disguised.webp");
+    std::fs::copy(&video, &disguised).unwrap();
+    assert!(visual::load_visual(disguised.to_str().unwrap()).is_err());
+    let info = audio::probe_audio(audio.to_str().unwrap()).unwrap();
+    assert_eq!((info.sample_rate, info.channels), (32_000, 2));
+    let attached = dir.path().join("attached-cover.mp4");
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=32000:duration=1.2",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=yellow:s=160x90:d=0.04",
+            "-map",
+            "0:a:0",
+            "-map",
+            "1:v:0",
+            "-c:a",
+            "aac",
+            "-c:v",
+            "mjpeg",
+            "-disposition:v",
+            "attached_pic",
+            attached.to_str().unwrap(),
+        ])
+        .unwrap();
+    assert!(audio::probe_audio(attached.to_str().unwrap()).is_ok());
+    assert!(visual::load_visual(attached.to_str().unwrap()).is_err());
+    let output = dir.path().join("retry.mp4");
+    let settings = OutputSettings {
+        fit: ImageFit::Cover,
+        ..OutputSettings::default()
+    };
+    assert!(encode_video(
+        audio.to_str().unwrap(),
+        broken.to_str().unwrap(),
+        output.to_str().unwrap(),
+        settings,
+        &[],
+        &[],
+        &EncodeJob::default(),
+    )
+    .is_err());
+    assert!(!output.exists());
+    let info = encode_video(
+        audio.to_str().unwrap(),
+        video.to_str().unwrap(),
+        output.to_str().unwrap(),
+        settings,
+        &[],
+        &[],
+        &EncodeJob::default(),
+    )
+    .unwrap();
+    assert!((info.duration_seconds - 1.2).abs() < 0.2);
+}
