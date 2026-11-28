@@ -3,6 +3,7 @@ use super::*;
 fn overlay(path: &str, opacity: u32) -> OverlayLayer {
     OverlayLayer {
         path: path.into(),
+        visualizer: None,
         x: 2500,
         y: 2500,
         width: 5000,
@@ -1494,4 +1495,186 @@ fn falls_back_to_cpu_for_unavailable_hardware() {
         );
     }
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 4);
+}
+
+#[test]
+fn visualizer_validates_color_and_keeps_file_inputs_finite() {
+    let mut layer = overlay("", 80);
+    layer.visualizer = Some(visualizer::Visualizer {
+        style: visualizer::Style::Frequency,
+        audio_source: visualizer::AudioSource::Processed,
+        color: "#ffffff".into(),
+        transparent: true,
+    });
+    assert!(layer.validate().is_ok());
+    layer.visualizer.as_mut().unwrap().color = "#fff;evil".into();
+    assert!(layer.validate().is_err());
+    layer.visualizer.as_mut().unwrap().color = "#abcdef".into();
+    layer.path = "forbidden.mkv".into();
+    assert!(layer.validate().is_err());
+    // Private prepared file paths are inserted only after validation.
+    layer.path = "generated.mkv".into();
+    let args = encoder_args(
+        "filtered.wav",
+        "base.png",
+        VisualKind::Png,
+        "out.mp4",
+        OutputSettings::default(),
+        AudioTiming::Prepared("2.000000"),
+        &[(&layer, VisualKind::Visualizer)],
+    );
+    assert!(args.windows(2).any(|pair| pair == ["-f", "matroska"]));
+    assert!(args.windows(2).any(|pair| pair == ["-map", "1:a:0"]));
+    assert!(args.windows(2).any(|pair| pair == ["-t", "2.000000"]));
+    assert!(!args.iter().any(|arg| arg == "-stream_loop"));
+    let graph = args.iter().find(|arg| arg.contains("[layer0]")).unwrap();
+    assert!(graph.contains("colorkey=0x000000"));
+    assert!(graph.contains("shortest=0:eof_action=pass:repeatlast=0"));
+}
+
+#[test]
+#[ignore = "requires FFmpeg and FFprobe"]
+fn encodes_all_visualizer_styles_and_preserves_audio_duration() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio = dir.path().join("tone.wav");
+    let base = dir.path().join("base.png");
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1.8",
+            "-af",
+            "volume=4",
+            "-c:a",
+            "pcm_s16le",
+            audio.to_str().unwrap(),
+        ])
+        .unwrap();
+    image::RgbImage::from_pixel(160, 90, image::Rgb([0, 0, 180]))
+        .save(&base)
+        .unwrap();
+    let filters: Vec<audio_filters::FilterEntry> =
+        serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#)
+            .unwrap();
+    for (index, style) in [
+        visualizer::Style::Waveform,
+        visualizer::Style::Frequency,
+        visualizer::Style::Volume,
+        visualizer::Style::Spectrogram,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut layer = overlay("", 100);
+        layer.visualizer = Some(visualizer::Visualizer {
+            style,
+            audio_source: if index.is_multiple_of(2) {
+                visualizer::AudioSource::Original
+            } else {
+                visualizer::AudioSource::Processed
+            },
+            color: "#ffffff".into(),
+            transparent: true,
+        });
+        let output = dir.path().join(format!("visualizer-{index}.mp4"));
+        let info = encode_video(
+            audio.to_str().unwrap(),
+            base.to_str().unwrap(),
+            output.to_str().unwrap(),
+            OutputSettings {
+                fit: ImageFit::Contain,
+                ..OutputSettings::default()
+            },
+            &filters,
+            &[layer],
+            &EncodeJob::default(),
+        )
+        .unwrap();
+        assert!((info.duration_seconds - 1.8).abs() < 0.2);
+        let pixels = sample_color_at(
+            &output,
+            "0.8",
+            "crop=960:540:480:270,scale=160:90,format=rgb24",
+        );
+        assert!(
+            pixels
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .any(|pixel| pixel[0] > 60 || pixel[1] > 60),
+            "missing visualizer {style:?}"
+        );
+        let corner = sample_color_at(&output, "0.8", "crop=2:2:20:20,format=rgb24");
+        assert!(corner[2] > 120 && corner[0] < 30);
+    }
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 6);
+}
+
+#[test]
+#[ignore = "requires FFmpeg and FFprobe"]
+fn visualizers_follow_tone_onset_and_selected_audio_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio = dir.path().join("tone.wav");
+    let base = dir.path().join("base.png");
+    let output = dir.path().join("sync.mp4");
+    Tool::Ffmpeg
+        .run(&[
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc=if(between(t\\,0.5\\,1.4)\\,0.8*sin(2*PI*440*t)\\,0):s=48000:d=2",
+            "-c:a",
+            "pcm_s16le",
+            audio.to_str().unwrap(),
+        ])
+        .unwrap();
+    image::RgbImage::from_pixel(160, 90, image::Rgb([0, 0, 180]))
+        .save(&base)
+        .unwrap();
+    let filters: Vec<audio_filters::FilterEntry> =
+        serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#)
+            .unwrap();
+    let mut original = overlay("", 100);
+    original.x = 1000;
+    original.y = 2000;
+    original.width = 8000;
+    original.height = 2000;
+    original.visualizer = Some(visualizer::Visualizer {
+        style: visualizer::Style::Volume,
+        audio_source: visualizer::AudioSource::Original,
+        color: "#ffffff".into(),
+        transparent: true,
+    });
+    let mut processed = original.clone();
+    processed.y = 6000;
+    processed.visualizer.as_mut().unwrap().audio_source = visualizer::AudioSource::Processed;
+    let info = encode_video(
+        audio.to_str().unwrap(),
+        base.to_str().unwrap(),
+        output.to_str().unwrap(),
+        OutputSettings {
+            fit: ImageFit::Contain,
+            ..OutputSettings::default()
+        },
+        &filters,
+        &[original, processed],
+        &EncodeJob::default(),
+    )
+    .unwrap();
+    assert!((info.duration_seconds - 2.0).abs() < 0.2);
+    // At 60% of the bar width, only the original 0.8-amplitude tone
+    // reaches this point; the processed tone is approximately 0.4.
+    let before = sample_color_at(&output, "0.2", "crop=2:2:1112:324,format=rgb24");
+    let original = sample_color_at(&output, "1.0", "crop=2:2:1112:324,format=rgb24");
+    let processed = sample_color_at(&output, "1.0", "crop=2:2:1112:756,format=rgb24");
+    assert_eq!(original.len(), 12);
+    assert!(before[2] > 120 && before[0] < 40, "{before:?}");
+    assert!(original[0] > 150 && original[1] > 150, "{original:?}");
+    assert!(processed[2] > 120 && processed[0] < 40, "{processed:?}");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3);
 }

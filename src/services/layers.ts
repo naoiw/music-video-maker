@@ -10,8 +10,38 @@ export interface LayerGeometry {
   opacity: number;
 }
 
-export interface OverlayLayer extends LayerGeometry {
-  path: string;
+export const visualizerStyles = ["frequency", "waveform", "volume", "spectrogram"] as const;
+export type VisualizerStyle = (typeof visualizerStyles)[number];
+export type VisualizerAudioSource = "original" | "processed";
+
+export interface VisualizerConfig {
+  style: VisualizerStyle;
+  audioSource: VisualizerAudioSource;
+  color: string;
+  transparent: boolean;
+}
+
+export type OverlayLayer = LayerGeometry & (
+  | { path: string; visualizer?: never }
+  | { path?: never; visualizer: VisualizerConfig }
+);
+
+export const defaultVisualizer = (): VisualizerConfig => ({
+  style: "frequency", audioSource: "processed", color: "#ffffff", transparent: true,
+});
+
+export const defaultVisualizerGeometry = (): LayerGeometry => ({
+  x: 1000, y: 7500, width: 8000, height: 2000, opacity: 100,
+});
+
+export const visualizerLabels: Record<VisualizerStyle, string> = {
+  frequency: "周波数バー", waveform: "音声波形", volume: "音量メーター", spectrogram: "スペクトログラム",
+};
+
+export function validVisualizer(value: VisualizerConfig): boolean {
+  return visualizerStyles.includes(value.style) &&
+    (value.audioSource === "original" || value.audioSource === "processed") &&
+    /^#[0-9a-f]{6}$/i.test(value.color) && typeof value.transparent === "boolean";
 }
 
 export const defaultLayerGeometry = (): LayerGeometry => ({

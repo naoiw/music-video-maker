@@ -109,3 +109,8 @@ summary { cursor: pointer; }
 .analysis-original { color: var(--analysis-original); }
 .analysis-processed { color: var(--analysis-processed); }
 .analysis-stats { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 5px 9px; margin-top: 8px; font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* Audio visualizer guide occupies the exact compositor rectangle. */
+.visualizer-guide { object-fit: fill; }
+.visualizer-fields { margin-block: 10px; }
+.visualizer-fields input[type=color] { min-height: 36px; padding: 3px; }

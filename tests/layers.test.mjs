@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultLayerGeometry, validLayerGeometry, parseLayerGeometry, layerPixelRect, moveLayer, MAX_OVERLAYS } from "../src/services/layers.ts";
+import { defaultLayerGeometry, validLayerGeometry, parseLayerGeometry, layerPixelRect, moveLayer, MAX_OVERLAYS, defaultVisualizer, defaultVisualizerGeometry, validVisualizer, visualizerStyles } from "../src/services/layers.ts";
 
 test("defaults and precise percent parsing match the IPC contract", () => {
   assert.equal(MAX_OVERLAYS, 8);
@@ -34,4 +34,13 @@ test("reordering changes the back-to-front sequence without losing entries", () 
   assert.deepEqual(layers, ["foreground overlay", "background overlay", "logo"]);
   assert.equal(moveLayer(layers, 2, -1), true);
   assert.deepEqual(layers, ["foreground overlay", "logo", "background overlay"]);
+});
+
+test("visualizer defaults fit the canvas and validate only known settings", () => {
+  assert.ok(validLayerGeometry(defaultVisualizerGeometry()));
+  assert.equal(defaultVisualizer().audioSource, "processed");
+  for (const style of visualizerStyles) assert.ok(validVisualizer({ ...defaultVisualizer(), style }));
+  for (const patch of [{ style: "unknown" }, { audioSource: "mixed" }, { color: "#fff" }, { color: "#fffffg" }, { color: "red;evil" }, { transparent: "true" }]) {
+    assert.equal(validVisualizer({ ...defaultVisualizer(), ...patch }), false);
+  }
 });

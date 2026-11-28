@@ -9,6 +9,7 @@ pub(super) enum VisualKind {
     Gif,
     WebP,
     Video,
+    Visualizer,
 }
 
 impl VisualKind {
@@ -43,6 +44,7 @@ fn visual_input_args(path: &str, source: VisualKind, fps: &str) -> Vec<String> {
     let mut args = vec!["-protocol_whitelist", "file"];
     match source {
         VisualKind::Gif => args.extend(["-f", "gif", "-ignore_loop", "0"]),
+        VisualKind::Visualizer => args.extend(["-f", "matroska"]),
         VisualKind::Video => args.extend([
             "-format_whitelist",
             crate::visual::VIDEO_FORMATS,
@@ -99,6 +101,23 @@ fn layered_filter(
         let (x, y, width, height) = layer.pixel_rect(settings);
         let alpha = f64::from(layer.opacity) / 100.0;
         use std::fmt::Write;
+        if let Some(config) = &layer.visualizer {
+            let key = if config.transparent {
+                "format=rgb24,colorkey=0x000000:0.01:0,format=rgba"
+            } else {
+                "format=rgba"
+            };
+            write!(
+                graph,
+                ";[{input}:v]setpts=PTS-STARTPTS,{key},scale={width}:{height},setsar=1,\
+                 colorchannelmixer=aa={alpha}[layer{index}];\
+                 [{previous}][layer{index}]overlay=x={x}:y={y}:\
+                 shortest=0:eof_action=pass:repeatlast=0:format=auto[out{index}]"
+            )
+            .expect("writing to a String cannot fail");
+            previous = format!("out{index}");
+            continue;
+        }
         write!(
             graph,
             ";[{input}:{stream}]setpts=PTS-STARTPTS,format=rgba,\

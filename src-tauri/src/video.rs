@@ -7,6 +7,7 @@ use std::sync::Mutex;
 
 mod arguments;
 mod output;
+mod visualizer;
 
 use arguments::{encoder_args, AudioTiming, VisualKind};
 use output::{positive_duration, validate_destination, validate_output};
@@ -108,7 +109,10 @@ const COORDINATE_SCALE: u32 = 10_000;
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct OverlayLayer {
+    #[serde(default)]
     path: String,
+    #[serde(default)]
+    visualizer: Option<visualizer::Visualizer>,
     x: u32,
     y: u32,
     width: u32,
@@ -129,6 +133,20 @@ impl OverlayLayer {
             return Err(crate::errors::tagged(
                 "OUTPUT_SETTINGS",
                 "レイヤーの位置・サイズ・不透明度が無効です。",
+            ));
+        }
+        if let Some(visualizer) = &self.visualizer {
+            if !self.path.is_empty() {
+                return Err(crate::errors::tagged(
+                    "OUTPUT_SETTINGS",
+                    "ビジュアライザーに素材パスは指定できません。",
+                ));
+            }
+            visualizer.validate()?;
+        } else if self.path.is_empty() {
+            return Err(crate::errors::tagged(
+                "INPUT_IMAGE",
+                "レイヤー素材がありません。",
             ));
         }
         Ok(())
@@ -295,9 +313,13 @@ pub(crate) fn encode_video(
     };
     let mut layer_copies = overlays.to_vec();
     let mut gif_files = Vec::new();
-    let mut prepared_overlays = Vec::with_capacity(overlays.len());
+    let mut kinds = Vec::with_capacity(overlays.len());
     for layer in &mut layer_copies {
         job.check_cancelled()?;
+        if layer.visualizer.is_some() {
+            kinds.push(VisualKind::Visualizer);
+            continue;
+        }
         let info = visual::inspect_visual(&layer.path)?;
         let kind = VisualKind::from_format(info.format)?;
         if matches!(kind, VisualKind::Gif) {
@@ -308,7 +330,7 @@ pub(crate) fn encode_video(
                 .to_owned();
             gif_files.push(temporary);
         }
-        prepared_overlays.push((&*layer, kind));
+        kinds.push(kind);
     }
     // Static sources use the same precomposed PNG as their preview. Animated
     // sources bypass this step so both layers can retain every source frame.
@@ -342,8 +364,17 @@ pub(crate) fn encode_video(
     drop(image);
     job.check_cancelled()?;
 
+    let visualizer_count = overlays
+        .iter()
+        .filter(|layer| layer.visualizer.is_some())
+        .count();
+    // With finite audio-driven video, use measured PCM duration and explicit -t.
+    // Retain the existing untouched-audio path when no visualizer is requested.
     let prepared = match audio_graph.as_deref() {
         Some(graph) => Some(prepare_audio(audio_path, graph, &audio_info, parent, job)?),
+        None if visualizer_count > 0 => {
+            Some(prepare_audio(audio_path, "anull", &audio_info, parent, job)?)
+        }
         None => None,
     };
     let expected_duration = prepared
@@ -362,6 +393,43 @@ pub(crate) fn encode_video(
             .ok_or_else(|| "音声の一時パスを処理できません。".to_owned())?,
         None => audio_path,
     };
+
+    let mut visualizer_directory = None;
+    if visualizer_count > 0 {
+        let directory = tempfile::Builder::new()
+            .prefix(".music-video-maker-visualizer-")
+            .tempdir_in(parent)
+            .map_err(|error| {
+                crate::errors::io_error("ビジュアライザー用一時フォルダ", &error, "OUTPUT_IO")
+            })?;
+        let weight = 0.2 / visualizer_count as f64;
+        let mut offset = 0.15;
+        for (index, layer) in layer_copies.iter_mut().enumerate() {
+            if let Some(config) = &layer.visualizer {
+                let path = directory.path().join(format!("layer-{index}.mkv"));
+                let path = path
+                    .to_str()
+                    .ok_or_else(|| "ビジュアライザーの一時パスを処理できません。".to_owned())?;
+                let source = match config.audio_source {
+                    visualizer::AudioSource::Original => audio_path,
+                    visualizer::AudioSource::Processed => input,
+                };
+                visualizer::render(
+                    config,
+                    source,
+                    path,
+                    settings,
+                    &duration,
+                    job,
+                    (offset, weight),
+                )?;
+                layer.path = path.to_owned();
+                offset += weight;
+            }
+        }
+        visualizer_directory = Some(directory);
+    }
+    let prepared_overlays: Vec<_> = layer_copies.iter().zip(kinds).collect();
 
     // Stage on the same filesystem; publish only after successful verification.
     let temporary = tempfile::Builder::new()
@@ -383,7 +451,9 @@ pub(crate) fn encode_video(
         quality: settings.crf,
     };
     let (selected, reason) = encoder::select(settings.encoder, spec, job)?;
-    let progress = if prepared.is_some() {
+    let progress = if visualizer_count > 0 {
+        (0.35, 0.65)
+    } else if prepared.is_some() {
         (0.15, 0.85)
     } else {
         (0.0, 1.0)
@@ -451,6 +521,7 @@ pub(crate) fn encode_video(
         crate::errors::io_error("動画を保存できません", &error.error, "OUTPUT_IO")
     })?;
 
+    drop(visualizer_directory);
     Ok(VideoInfo {
         duration_seconds,
         size_bytes,
