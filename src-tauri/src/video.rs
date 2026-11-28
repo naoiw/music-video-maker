@@ -118,34 +118,63 @@ enum VisualKind {
     Gif,
 }
 
-fn encoder_args(
-    audio_path: &str,
-    visual_path: &str,
-    source: VisualKind,
-    temporary_path: &str,
-    settings: OutputSettings,
-    filtered_duration: Option<&str>,
-) -> Vec<String> {
-    let fps = settings.fps.to_string();
-    let crf = settings.crf.to_string();
-    let filter = if matches!(source, VisualKind::Gif) && matches!(settings.fit, ImageFit::Blurred) {
-        settings.animated_blurred_filter()
-    } else {
-        settings.filter()
-    };
-    let mut args = vec![
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-nostdin",
-        "-nostats",
-        "-progress",
-        "pipe:1",
-        "-xerror",
-        "-y", // Only the private temporary file can be overwritten.
-        "-protocol_whitelist",
-        "file",
-    ];
+const MAX_OVERLAYS: usize = 8;
+const COORDINATE_SCALE: u32 = 10_000;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct OverlayLayer {
+    path: String,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    opacity: u32,
+}
+
+impl OverlayLayer {
+    fn validate(&self) -> Result<(), String> {
+        if self.x >= COORDINATE_SCALE
+            || self.y >= COORDINATE_SCALE
+            || self.width == 0
+            || self.height == 0
+            || self.width > COORDINATE_SCALE - self.x
+            || self.height > COORDINATE_SCALE - self.y
+            || self.opacity > 100
+        {
+            return Err(crate::errors::tagged(
+                "OUTPUT_SETTINGS",
+                "レイヤーの位置・サイズ・不透明度が無効です。",
+            ));
+        }
+        Ok(())
+    }
+
+    fn pixel_rect(&self, settings: OutputSettings) -> (u32, u32, u32, u32) {
+        let x = self.x * settings.width / COORDINATE_SCALE;
+        let y = self.y * settings.height / COORDINATE_SCALE;
+        let right = (self.x + self.width) * settings.width / COORDINATE_SCALE;
+        let bottom = (self.y + self.height) * settings.height / COORDINATE_SCALE;
+        (x, y, (right - x).max(1), (bottom - y).max(1))
+    }
+}
+
+impl VisualKind {
+    fn from_format(format: &str) -> Result<Self, String> {
+        match format {
+            "PNG" => Ok(Self::Png),
+            "JPEG" => Ok(Self::Jpeg),
+            "GIF" => Ok(Self::Gif),
+            _ => Err(crate::errors::tagged(
+                "INPUT_IMAGE",
+                "非対応の画像形式です。",
+            )),
+        }
+    }
+}
+
+fn visual_input_args(path: &str, source: VisualKind, fps: &str) -> Vec<String> {
+    let mut args = vec!["-protocol_whitelist", "file"];
     match source {
         VisualKind::Gif => args.extend(["-f", "gif", "-ignore_loop", "1", "-stream_loop", "-1"]),
         VisualKind::Png | VisualKind::Jpeg => {
@@ -161,54 +190,148 @@ fn encoder_args(
                 "-loop",
                 "1",
                 "-framerate",
-                &fps,
+                fps,
                 "-c:v",
                 codec,
             ]);
         }
     }
-    args.extend([
-        "-i",
-        visual_path,
-        "-protocol_whitelist",
-        "file",
-        "-f",
-        if filtered_duration.is_some() {
-            "wav"
-        } else {
-            "mp3"
-        },
-        "-i",
-        audio_path,
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0",
-        "-map_metadata",
-        "-1",
-        "-vf",
-        &filter,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "medium",
-        "-crf",
-        &crf,
-        "-pix_fmt",
-        "yuv420p",
-        "-color_range",
-        "tv",
-        "-r",
-        &fps,
-    ]);
-    args.extend(["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]);
-    if let Some(duration) = filtered_duration {
-        args.extend(["-t", duration]);
-    } else {
-        args.push("-shortest");
-    }
-    args.extend(["-f", "mp4", temporary_path]);
+    args.extend(["-i", path]);
     args.into_iter().map(str::to_owned).collect()
+}
+
+fn layered_filter(
+    base_filter: &str,
+    overlays: &[(&OverlayLayer, VisualKind)],
+    settings: OutputSettings,
+) -> (String, String) {
+    // Normalize the base cadence before framesync so a slow GIF background
+    // does not limit the update rate of foreground animations.
+    let fps = settings.fps;
+    let mut graph = format!("[0:v]{base_filter},fps={fps},setpts=PTS-STARTPTS[base]");
+    let mut previous = "base".to_owned();
+    for (index, (layer, _)) in overlays.iter().enumerate() {
+        let input = index + 2; // 0: base visual, 1: audio.
+        let (x, y, width, height) = layer.pixel_rect(settings);
+        let alpha = f64::from(layer.opacity) / 100.0;
+        use std::fmt::Write;
+        write!(
+            graph,
+            ";[{input}:v]setpts=PTS-STARTPTS,format=rgba,\
+             scale=w='max(1,min({width},iw*{height}/ih))':\
+             h='max(1,min({height},ih*{width}/iw))',setsar=1,\
+             colorchannelmixer=aa={alpha}[layer{index}];\
+             [{previous}][layer{index}]overlay=x={x}+({width}-w)/2:\
+             y={y}+({height}-h)/2:shortest=1:format=auto[out{index}]"
+        )
+        .expect("writing to a String cannot fail");
+        previous = format!("out{index}");
+    }
+    (graph, format!("[{previous}]"))
+}
+
+fn encoder_args(
+    audio_path: &str,
+    visual_path: &str,
+    source: VisualKind,
+    temporary_path: &str,
+    settings: OutputSettings,
+    filtered_duration: Option<&str>,
+    overlays: &[(&OverlayLayer, VisualKind)],
+) -> Vec<String> {
+    let fps = settings.fps.to_string();
+    let crf = settings.crf.to_string();
+    let filter = if matches!(source, VisualKind::Gif) && matches!(settings.fit, ImageFit::Blurred) {
+        settings.animated_blurred_filter()
+    } else {
+        settings.filter()
+    };
+    let mut args: Vec<String> = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-nostats",
+        "-progress",
+        "pipe:1",
+        "-xerror",
+        "-y", // Only the private temporary file can be overwritten.
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    args.extend(visual_input_args(visual_path, source, &fps));
+    args.extend(
+        [
+            "-protocol_whitelist",
+            "file",
+            "-f",
+            if filtered_duration.is_some() {
+                "wav"
+            } else {
+                "mp3"
+            },
+            "-i",
+            audio_path,
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    );
+    if overlays.is_empty() {
+        args.extend(
+            ["-map", "0:v:0", "-vf", &filter]
+                .into_iter()
+                .map(str::to_owned),
+        );
+    } else {
+        for (layer, kind) in overlays {
+            args.extend(visual_input_args(&layer.path, *kind, &fps));
+        }
+        let (graph, output) = layered_filter(&filter, overlays, settings);
+        args.extend([
+            "-filter_complex_threads".into(),
+            "1".into(),
+            "-filter_complex".into(),
+            graph,
+            "-map".into(),
+            output,
+        ]);
+    }
+    args.extend(
+        [
+            "-map",
+            "1:a:0",
+            "-map_metadata",
+            "-1",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            &crf,
+            "-pix_fmt",
+            "yuv420p",
+            "-color_range",
+            "tv",
+            "-r",
+            &fps,
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-movflags",
+            "+faststart",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    );
+    if let Some(duration) = filtered_duration {
+        args.extend(["-t".into(), duration.into()]);
+    } else {
+        args.push("-shortest".into());
+    }
+    args.extend(["-f", "mp4", temporary_path].into_iter().map(str::to_owned));
+    args
 }
 
 fn positive_duration(value: &str) -> Result<f64, String> {
@@ -402,12 +525,22 @@ pub(crate) fn encode_video(
     output_path: &str,
     settings: OutputSettings,
     filters: &[audio_filters::FilterEntry],
+    overlays: &[OverlayLayer],
     job: &EncodeJob,
 ) -> Result<VideoInfo, String> {
     job.check_cancelled()?;
     settings
         .validate()
         .map_err(|error| crate::errors::tagged("OUTPUT_SETTINGS", error))?;
+    if overlays.len() > MAX_OVERLAYS {
+        return Err(crate::errors::tagged(
+            "OUTPUT_SETTINGS",
+            "追加レイヤーは8個までです。",
+        ));
+    }
+    for layer in overlays {
+        layer.validate()?;
+    }
     let _guard = ENCODE_LOCK
         .try_lock()
         .map_err(|_| "別の動画生成を実行中です。".to_owned())?;
@@ -421,12 +554,13 @@ pub(crate) fn encode_video(
     job.set_duration(audio_info.duration_seconds);
     job.check_cancelled()?;
     let image = visual::load_visual(visual_path)?;
-    let source = match image.format {
-        "PNG" => VisualKind::Png,
-        "JPEG" => VisualKind::Jpeg,
-        "GIF" => VisualKind::Gif,
-        _ => return Err("非対応の画像形式です。".into()),
-    };
+    let source = VisualKind::from_format(image.format)?;
+    let mut prepared_overlays = Vec::with_capacity(overlays.len());
+    for layer in overlays {
+        job.check_cancelled()?;
+        let info = visual::load_visual(&layer.path)?;
+        prepared_overlays.push((layer, VisualKind::from_format(info.format)?));
+    }
     // Static sources use the same precomposed PNG as their preview. Animated
     // GIFs bypass this step so both layers can retain every source frame.
     let composed = if matches!(settings.fit, ImageFit::Blurred)
@@ -496,6 +630,7 @@ pub(crate) fn encode_video(
         temp_path,
         settings,
         duration.as_deref(),
+        &prepared_overlays,
     );
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let progress = if prepared.is_some() {
@@ -553,6 +688,137 @@ pub(crate) fn encode_video(
 mod tests {
     use super::*;
 
+    fn overlay(path: &str, opacity: u32) -> OverlayLayer {
+        OverlayLayer {
+            path: path.into(),
+            x: 2500,
+            y: 2500,
+            width: 5000,
+            height: 5000,
+            opacity,
+        }
+    }
+
+    #[test]
+    fn validates_overlay_geometry_and_opacity() {
+        let mut layer = overlay("test.png", 50);
+        assert!(layer.validate().is_ok());
+        assert_eq!(
+            layer.pixel_rect(OutputSettings::default()),
+            (480, 270, 960, 540)
+        );
+        layer.width = 7501;
+        assert!(layer.validate().is_err());
+        layer.width = 0;
+        assert!(layer.validate().is_err());
+        layer.width = 5000;
+        layer.opacity = 101;
+        assert!(layer.validate().is_err());
+        layer.opacity = 0;
+        layer.x = u32::MAX;
+        assert!(layer.validate().is_err());
+    }
+
+    #[test]
+    fn layered_arguments_preserve_order_paths_and_audio_mapping() {
+        let first = overlay("C:/素材/first %d.png", 100);
+        let second = overlay("C:/素材/second.gif", 50);
+        let args = encoder_args(
+            "music.mp3",
+            "base.png",
+            VisualKind::Png,
+            "out.mp4",
+            OutputSettings::default(),
+            None,
+            &[(&first, VisualKind::Png), (&second, VisualKind::Gif)],
+        );
+        let paths: Vec<&str> = args
+            .windows(2)
+            .filter(|pair| pair[0] == "-i")
+            .map(|pair| pair[1].as_str())
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                "base.png",
+                "music.mp3",
+                first.path.as_str(),
+                second.path.as_str()
+            ]
+        );
+        assert!(args.windows(2).any(|pair| pair == ["-map", "[out1]"]));
+        assert!(args.windows(2).any(|pair| pair == ["-map", "1:a:0"]));
+        assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "1"]));
+        let graph = &args[args
+            .iter()
+            .position(|arg| arg == "-filter_complex")
+            .unwrap()
+            + 1];
+        assert!(graph.contains("[2:v]"));
+        assert!(graph.contains("[3:v]"));
+        assert!(graph.contains("[out0][layer1]overlay"));
+        assert!(graph.contains("colorchannelmixer=aa=0.5"));
+        assert!(!graph.contains(&first.path));
+        assert!(!args.iter().any(|arg| arg == "-vf"));
+    }
+
+    #[test]
+    #[ignore = "requires FFmpeg with libmp3lame, libx264, AAC and FFprobe"]
+    fn encodes_ordered_overlays_with_source_alpha() {
+        use image::{Rgb, RgbImage, Rgba, RgbaImage};
+
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("music.mp3");
+        let base = dir.path().join("base.png");
+        let first = dir.path().join("first.png");
+        let second = dir.path().join("second.png");
+        let output = dir.path().join("result.mp4");
+        Tool::Ffmpeg
+            .run(&[
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=1.2",
+                "-c:a",
+                "libmp3lame",
+                audio.to_str().unwrap(),
+            ])
+            .unwrap();
+        RgbImage::from_pixel(160, 90, Rgb([0, 0, 255]))
+            .save(&base)
+            .unwrap();
+        RgbImage::from_pixel(100, 100, Rgb([255, 0, 0]))
+            .save(&first)
+            .unwrap();
+        RgbaImage::from_pixel(100, 100, Rgba([0, 255, 0, 128]))
+            .save(&second)
+            .unwrap();
+        let info = encode_video(
+            audio.to_str().unwrap(),
+            base.to_str().unwrap(),
+            output.to_str().unwrap(),
+            OutputSettings {
+                fit: ImageFit::Contain,
+                ..OutputSettings::default()
+            },
+            &[],
+            &[
+                overlay(first.to_str().unwrap(), 100),
+                overlay(second.to_str().unwrap(), 50),
+            ],
+            &EncodeJob::default(),
+        )
+        .unwrap();
+        assert!((info.duration_seconds - 1.2).abs() < 0.2);
+        let center = sample_color(&output, "0.5");
+        // Red covered by 25% green (source alpha 50% × layer opacity 50%).
+        assert!(center[0] > 160 && (35..100).contains(&center[1]) && center[2] < 30);
+        let corner = sample_color_at(&output, "0.5", "crop=2:2:20:20,format=rgb24");
+        assert!(corner[0] < 30 && corner[1] < 30 && corner[2] > 200);
+    }
+
     #[test]
     fn arguments_keep_paths_separate_and_map_only_requested_streams() {
         let args = encoder_args(
@@ -562,6 +828,7 @@ mod tests {
             "temp.mp4",
             OutputSettings::default(),
             None,
+            &[],
         );
         assert!(args.windows(2).any(|pair| pair == ["-i", "cover %d.png"]));
         assert!(args.windows(2).any(|pair| pair == ["-i", "music file.mp3"]));
@@ -582,6 +849,7 @@ mod tests {
             "temp.mp4",
             OutputSettings::default(),
             None,
+            &[],
         );
         assert!(args.windows(2).any(|pair| pair == ["-f", "gif"]));
         assert!(args.windows(2).any(|pair| pair == ["-ignore_loop", "1"]));
@@ -648,6 +916,7 @@ mod tests {
                 output.to_str().unwrap(),
                 OutputSettings::default(),
                 &[],
+                &[],
                 &EncodeJob::default(),
             )
             .unwrap();
@@ -659,6 +928,7 @@ mod tests {
                 cover.to_str().unwrap(),
                 output.to_str().unwrap(),
                 OutputSettings::default(),
+                &[],
                 &[],
                 &EncodeJob::default(),
             )
@@ -751,6 +1021,7 @@ mod tests {
                         ..OutputSettings::default()
                     },
                     &[],
+                    &[],
                     &EncodeJob::default(),
                 )
                 .unwrap();
@@ -813,7 +1084,7 @@ mod tests {
         };
         assert!(cover.validate().is_ok());
         assert!(cover.filter().contains("crop=1080:1920"));
-        let args = encoder_args("a.mp3", "b.png", VisualKind::Png, "c.mp4", cover, None);
+        let args = encoder_args("a.mp3", "b.png", VisualKind::Png, "c.mp4", cover, None, &[]);
         for expected in [["-framerate", "60"], ["-r", "60"], ["-crf", "16"]] {
             assert!(args.windows(2).any(|pair| pair == expected));
         }
@@ -878,6 +1149,7 @@ mod tests {
                 output.to_str().unwrap(),
                 settings,
                 &[],
+                &[],
                 &EncodeJob::default(),
             )
             .unwrap();
@@ -926,6 +1198,7 @@ mod tests {
                     output.to_str().unwrap(),
                     OutputSettings::default(),
                     &[],
+                    &[],
                     &job,
                 )
             });
@@ -954,6 +1227,7 @@ mod tests {
             output.to_str().unwrap(),
             OutputSettings::default(),
             &[],
+            &[],
             &EncodeJob::default(),
         )
         .unwrap();
@@ -970,6 +1244,7 @@ mod tests {
             "out.mp4",
             OutputSettings::default(),
             None,
+            &[],
         );
         assert!(!args.iter().any(|arg| arg == "-af"));
         let args = encoder_args(
@@ -979,6 +1254,7 @@ mod tests {
             "out.mp4",
             OutputSettings::default(),
             Some("3.200000"),
+            &[],
         );
         assert!(args.windows(2).any(|pair| pair == ["-f", "wav"]));
         assert!(args.windows(2).any(|pair| pair == ["-t", "3.200000"]));
@@ -1076,6 +1352,7 @@ mod tests {
                 output.to_str().unwrap(),
                 settings,
                 &filters,
+                &[],
                 &EncodeJob::default(),
             )
             .unwrap_or_else(|error| panic!("{name}: {error}"));
@@ -1097,6 +1374,7 @@ mod tests {
             output.to_str().unwrap(),
             settings,
             &invalid,
+            &[],
             &EncodeJob::default(),
         )
         .is_err());
@@ -1131,6 +1409,7 @@ mod tests {
                             "out.mp4",
                             settings,
                             None,
+                            &[],
                         );
                         for (flag, value) in [
                             ("-r", fps.to_string()),
@@ -1217,6 +1496,7 @@ mod tests {
                 output_path,
                 settings,
                 &filters,
+                &[],
                 &EncodeJob::default(),
             )
         };
