@@ -2,6 +2,8 @@ use crate::{errors, ffmpeg::Tool};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+pub(crate) const AUDIO_FORMATS: &str = "mp3,wav,flac,aac,mov,mp4,m4a,3gp,3g2,mj2,matroska,webm";
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AudioInfo {
@@ -26,6 +28,8 @@ struct AudioStream {
     channels: Option<u32>,
     duration: Option<String>,
     bit_rate: Option<String>,
+    #[serde(default)]
+    tags: std::collections::HashMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +46,41 @@ fn positive_duration(value: Option<&str>) -> Option<f64> {
         .filter(|value| value.is_finite() && *value > 0.0)
 }
 
+fn extension(path: &Path) -> Option<String> {
+    path.extension()?.to_str().map(str::to_ascii_lowercase)
+}
+
+fn supported_extension(ext: &str) -> bool {
+    matches!(ext, "mp3" | "wav" | "flac" | "aac" | "m4a" | "mp4" | "webm")
+}
+
+fn matches_format(ext: &str, format: &str, codec: &str) -> bool {
+    let has = |name| format.split(',').any(|part| part == name);
+    match ext {
+        "mp3" => has("mp3") && codec == "mp3",
+        "wav" => has("wav") && codec.starts_with("pcm_"),
+        "flac" => has("flac") && codec == "flac",
+        "aac" => has("aac") && codec == "aac",
+        "m4a" => has("mov") && matches!(codec, "aac" | "alac"),
+        "mp4" => has("mov") && matches!(codec, "aac" | "alac" | "mp3" | "opus" | "flac"),
+        "webm" => has("webm") && matches!(codec, "opus" | "vorbis"),
+        _ => false,
+    }
+}
+
+fn tagged_duration(tags: &std::collections::HashMap<String, String>) -> Option<f64> {
+    let value = tags
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("duration"))?
+        .1;
+    let mut parts = value.split(':');
+    let hours = parts.next()?.parse::<f64>().ok()?;
+    let minutes = parts.next()?.parse::<f64>().ok()?;
+    let seconds = parts.next()?.parse::<f64>().ok()?;
+    let total = hours * 3600.0 + minutes * 60.0 + seconds;
+    (parts.next().is_none() && total.is_finite() && total > 0.0).then_some(total)
+}
+
 fn parse_info(name: String, bytes: &[u8]) -> Result<AudioInfo, String> {
     let probe: ProbeResult =
         serde_json::from_slice(bytes).map_err(|error| format!("FFprobe JSON: {error}"))?;
@@ -49,11 +88,17 @@ fn parse_info(name: String, bytes: &[u8]) -> Result<AudioInfo, String> {
         .streams
         .first()
         .ok_or_else(|| "音声ストリームがありません。".to_owned())?;
-    if probe.format.format_name != "mp3" || stream.codec_name.as_deref() != Some("mp3") {
-        return Err("MP3 音声ファイルを選択してください。".into());
+    let ext = extension(Path::new(&name)).unwrap_or_default();
+    if !matches_format(
+        &ext,
+        &probe.format.format_name,
+        stream.codec_name.as_deref().unwrap_or_default(),
+    ) {
+        return Err("拡張子と実際の音声形式が一致しないか、非対応のコーデックです。".into());
     }
 
     let duration_seconds = positive_duration(stream.duration.as_deref())
+        .or_else(|| tagged_duration(&stream.tags))
         .or_else(|| positive_duration(probe.format.duration.as_deref()))
         .ok_or_else(|| "再生時間を取得できません。".to_owned())?;
     let sample_rate = stream
@@ -80,6 +125,10 @@ fn parse_info(name: String, bytes: &[u8]) -> Result<AudioInfo, String> {
                 .filter(|value| *value > 0)
         });
 
+    if !(8_000..=48_000).contains(&sample_rate) || !(1..=2).contains(&channels) {
+        return Err("音声は 8～48 kHz、モノラルまたはステレオに対応しています。".into());
+    }
+
     Ok(AudioInfo {
         name,
         duration_seconds,
@@ -95,13 +144,8 @@ pub(crate) fn probe_audio(path: &str) -> Result<AudioInfo, String> {
 
 fn probe_audio_inner(path: &str) -> Result<AudioInfo, String> {
     let input = Path::new(path);
-    if !input.is_absolute()
-        || !input
-            .extension()
-            .and_then(|value| value.to_str())
-            .is_some_and(|value| value.eq_ignore_ascii_case("mp3"))
-    {
-        return Err("ローカルの MP3 ファイルを選択してください。".into());
+    if !input.is_absolute() || !extension(input).is_some_and(|ext| supported_extension(&ext)) {
+        return Err("対応するローカルの音声素材を選択してください。".into());
     }
     let metadata = input
         .metadata()
@@ -121,11 +165,11 @@ fn probe_audio_inner(path: &str) -> Result<AudioInfo, String> {
         "-protocol_whitelist",
         "file",
         "-format_whitelist",
-        "mp3",
+        AUDIO_FORMATS,
         "-select_streams",
         "a:0",
         "-show_entries",
-        "stream=codec_name,sample_rate,channels,duration,bit_rate:format=format_name,duration,bit_rate",
+        "stream=codec_name,sample_rate,channels,duration,bit_rate:stream_tags=DURATION:format=format_name,duration,bit_rate",
         "-of",
         "json",
         "-i",
@@ -179,6 +223,32 @@ mod tests {
     }
 
     #[test]
+    fn validates_container_and_codec_pairs() {
+        for (ext, format, codec) in [
+            ("wav", "wav", "pcm_s16le"),
+            ("flac", "flac", "flac"),
+            ("aac", "aac", "aac"),
+            ("m4a", "mov,mp4,m4a,3gp,3g2,mj2", "aac"),
+            ("mp4", "mov,mp4,m4a,3gp,3g2,mj2", "aac"),
+            ("webm", "matroska,webm", "opus"),
+        ] {
+            assert!(matches_format(ext, format, codec));
+            assert!(!matches_format("mp3", format, codec));
+        }
+        assert!(!matches_format("wav", "wav", "aac"));
+        assert!(!matches_format("webm", "matroska,webm", "h264"));
+    }
+
+    #[test]
+    fn prefers_audio_stream_duration_to_container_duration() {
+        let data = br#"{"streams":[{"codec_name":"opus","sample_rate":"48000","channels":2,
+            "tags":{"DURATION":"00:00:02.500000000"}}],
+            "format":{"format_name":"matroska,webm","duration":"8.0"}}"#;
+        let info = parse_info("song.webm".into(), data).unwrap();
+        assert_eq!(info.duration_seconds, 2.5);
+    }
+
+    #[test]
     fn rejects_invalid_duration() {
         for value in ["N/A", "0", "-1", "NaN", "inf"] {
             assert_eq!(positive_duration(Some(value)), None);
@@ -186,9 +256,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_relative_paths_and_non_mp3_extensions() {
+    fn rejects_relative_paths_and_unsupported_extensions() {
         assert!(probe_audio("song.mp3").is_err());
-        let path = std::env::temp_dir().join("song.wav");
+        let path = std::env::temp_dir().join("song.txt");
         assert!(probe_audio(path.to_str().unwrap()).is_err());
     }
 

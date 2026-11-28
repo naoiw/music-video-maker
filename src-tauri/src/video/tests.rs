@@ -920,3 +920,67 @@ fn encodes_after_invalid_sources_and_verifies_published_file() {
     assert_eq!(std::fs::read(&audio).unwrap(), original);
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3);
 }
+
+#[test]
+#[ignore = "requires FFmpeg with AAC, libopus, libvpx-vp9, libx264 and FFprobe"]
+fn encodes_and_previews_extended_audio_inputs() {
+    let dir = tempfile::tempdir().unwrap();
+    let image = dir.path().join("cover.png");
+    image::RgbImage::new(160, 90).save(&image).unwrap();
+    let filters: Vec<audio_filters::FilterEntry> =
+        serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#).unwrap();
+    for (ext, codec, video_codec) in [
+        ("wav", "pcm_s16le", None),
+        ("flac", "flac", None),
+        ("aac", "aac", None),
+        ("m4a", "aac", None),
+        ("mp4", "aac", Some("libx264")),
+        ("webm", "libopus", Some("libvpx-vp9")),
+    ] {
+        let input = dir.path().join(format!("source.{ext}"));
+        let path = input.to_str().unwrap();
+        let mut args = vec![
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1.2",
+        ];
+        if let Some(codec) = video_codec {
+            args.extend([
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:s=160x90:d=1.8",
+                "-c:v",
+                codec,
+            ]);
+        }
+        args.extend(["-c:a", codec, path]);
+        Tool::Ffmpeg.run(&args).unwrap();
+        let info = audio::probe_audio(path).unwrap();
+        assert!((info.duration_seconds - 1.2).abs() < 0.2, "{ext}");
+        crate::audio_preview::render(path, 0.0, &[]).unwrap();
+        crate::audio_preview::render(path, 0.0, &filters).unwrap();
+        for (name, chain) in [("original", &[][..]), ("filtered", filters.as_slice())] {
+            let output = dir.path().join(format!("{ext}-{name}.mp4"));
+            let info = encode_video(
+                path,
+                image.to_str().unwrap(),
+                output.to_str().unwrap(),
+                OutputSettings {
+                    fit: ImageFit::Contain,
+                    ..OutputSettings::default()
+                },
+                chain,
+                &[],
+                &EncodeJob::default(),
+            )
+            .unwrap();
+            assert!((info.duration_seconds - 1.2).abs() < 0.2, "{ext}/{name}");
+            let pixel = sample_color(&output, "0.5");
+            assert!(pixel.iter().all(|value| *value < 30), "{ext}/{name}");
+        }
+    }
+}

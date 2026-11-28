@@ -115,11 +115,15 @@ pub(super) fn encoder_args(
         [
             "-protocol_whitelist",
             "file",
-            "-f",
+            if filtered_duration.is_some() {
+                "-f"
+            } else {
+                "-format_whitelist"
+            },
             if filtered_duration.is_some() {
                 "wav"
             } else {
-                "mp3"
+                crate::audio::AUDIO_FORMATS
             },
             "-i",
             audio_path,
