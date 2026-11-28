@@ -121,6 +121,7 @@ export function drawSpectrum(canvas: HTMLCanvasElement, data: AudioComparison): 
   for (const [track, color] of [[data.original, colors.original], [data.processed, colors.processed]] as const) {
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.4;
+    ctx.setLineDash(track === data.processed ? [4, 3] : []);
     ctx.beginPath();
     let started = false;
     for (const [i, db] of track.spectrumDb.entries()) {
@@ -132,4 +133,5 @@ export function drawSpectrum(canvas: HTMLCanvasElement, data: AudioComparison): 
     }
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 }

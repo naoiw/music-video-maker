@@ -63,9 +63,8 @@ impl Spectrum {
             fft(&mut self.real, &mut self.imag, &self.roots);
             for (i, power) in self.power.iter_mut().enumerate() {
                 let factor = if i == 0 || i == SIZE / 2 { 1.0 } else { 2.0 };
-                *power += factor
-                    * (self.real[i] * self.real[i] + self.imag[i] * self.imag[i])
-                    * weight;
+                *power +=
+                    factor * (self.real[i] * self.real[i] + self.imag[i] * self.imag[i]) * weight;
             }
         }
         self.frames += frames;

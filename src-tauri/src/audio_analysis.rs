@@ -54,11 +54,11 @@ struct Summary {
 }
 
 impl Summary {
-    fn new(info: &audio::AudioInfo) -> Self {
-        let frames = (info.duration_seconds * f64::from(info.sample_rate)).ceil() as u64;
+    fn new(rate: u32, channels: usize, duration: f64) -> Self {
+        let frames = (duration * f64::from(rate)).ceil() as u64;
         Self {
-            rate: info.sample_rate,
-            channels: info.channels as usize,
+            rate,
+            channels,
             frames: 0,
             frames_per_bin: frames.div_ceil(TARGET_BINS).max(1),
             waveform: Vec::new(),
@@ -131,7 +131,11 @@ impl Summary {
 }
 
 fn read_pcm(mut reader: impl Read, info: &audio::AudioInfo) -> Result<Track, String> {
-    let mut summary = Summary::new(info);
+    let mut summary = Summary::new(
+        info.sample_rate,
+        info.channels as usize,
+        info.duration_seconds,
+    );
     let frame_bytes = info.channels as usize * 4;
     let mut buffer = vec![0; fft::SIZE * frame_bytes];
     let mut samples = Vec::with_capacity(fft::SIZE * info.channels as usize);
@@ -224,7 +228,9 @@ fn analyze_track(path: &str, info: &audio::AudioInfo, graph: Option<&str>) -> Re
     let status = child
         .wait()
         .map_err(|error| errors::tool_start_error("FFmpeg", &error))?;
-    if !status.success() {
+    // A rejected stream may have been deliberately killed; retain the
+    // analysis error rather than reporting a secondary broken pipe.
+    if !status.success() && result.is_ok() {
         stderr
             .seek(SeekFrom::Start(0))
             .map_err(|error| error.to_string())?;
@@ -233,12 +239,7 @@ fn analyze_track(path: &str, info: &audio::AudioInfo, graph: Option<&str>) -> Re
             .take(8192)
             .read_to_end(&mut detail)
             .map_err(|error| error.to_string())?;
-        if !detail.is_empty() {
-            return Err(errors::process_error("FFmpeg analysis", status, &detail));
-        }
-    }
-    if !status.success() && result.is_ok() {
-        return Err(errors::process_error("FFmpeg analysis", status, &[]));
+        return Err(errors::process_error("FFmpeg analysis", status, &detail));
     }
     result
 }
@@ -273,6 +274,26 @@ pub(crate) fn analyze(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn envelope_retains_extrema_and_counts_over_range_after_merging() {
+        let mut summary = Summary::new(8000, 2, 0.01);
+        let mut samples = vec![0.0; 4096 * 2];
+        samples[0] = -1.5;
+        samples[1] = 0.5;
+        samples[4096 * 2 - 1] = 2.0;
+        summary.add(&samples).unwrap();
+        let track = summary.finish().unwrap();
+        assert_eq!(track.frames_per_bin, 2);
+        assert_eq!(track.waveform.len(), 2048);
+        assert_eq!(track.waveform[0].min, -1.5);
+        assert_eq!(track.waveform[2047].max, 2.0);
+        assert_eq!(track.peak, 2.0);
+        assert_eq!(track.over_range_samples, 2);
+        assert!((track.rms - (6.5_f64 / 8192.0).sqrt()).abs() < 1e-10);
+        let mut invalid = Summary::new(8000, 1, 0.01);
+        assert!(invalid.add(&[f32::NAN]).is_err());
+    }
 
     #[test]
     #[ignore = "requires FFmpeg and FFprobe"]
