@@ -256,6 +256,10 @@ fn retryable(error: &str) -> bool {
     ]
     .iter()
     .any(|&prefix| error.starts_with(prefix))
+        // FFmpeg also reports GPU initialization errors as EPERM; distinguish
+        // those from actual input/output file permission errors.
+        || (error.starts_with("[MVM:PERMISSION]")
+            && error.to_ascii_lowercase().contains("error while opening encoder"))
 }
 
 // Retry only failed hardware processing/verification, not cancellation,
@@ -340,6 +344,15 @@ mod tests {
             .args(20, 30)
             .windows(2)
             .any(|pair| pair == ["-pix_fmt", "nv12"]));
+    }
+
+    #[test]
+    fn recognizes_gpu_encoder_initialization_permission_errors() {
+        assert!(retryable(
+            "[MVM:PERMISSION] Error while opening encoder: Operation not permitted"
+        ));
+        assert!(!retryable("[MVM:PERMISSION] Permission denied opening input"));
+        assert!(!retryable("[MVM:DISK_FULL] No space left on device"));
     }
 
     #[test]
