@@ -715,8 +715,7 @@ fn encodes_with_audio_filter_chain() {
     assert_eq!(std::fs::read(&audio).unwrap(), original_bytes);
 
     let invalid: Vec<audio_filters::FilterEntry> =
-        serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":99}}]"#)
-            .unwrap();
+        serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":99}}]"#).unwrap();
     let output = dir.path().join("invalid.mp4");
     assert!(encode_video(
         audio.to_str().unwrap(),
@@ -790,9 +789,8 @@ fn output_verification_rejects_each_invalid_stream_property() {
         "format":{"duration":"2.01"}
     });
     let settings = OutputSettings::default();
-    let check = |value: &serde_json::Value| {
-        validate_output(&serde_json::to_vec(value).unwrap(), settings)
-    };
+    let check =
+        |value: &serde_json::Value| validate_output(&serde_json::to_vec(value).unwrap(), settings);
     assert_eq!(check(&valid).unwrap(), 2.01);
     for (index, key, value) in [
         (0_usize, "codec_name", serde_json::json!("hevc")),
@@ -837,8 +835,7 @@ fn encodes_after_invalid_sources_and_verifies_published_file() {
         fit: ImageFit::Cover,
     };
     let filters: Vec<audio_filters::FilterEntry> =
-        serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#)
-            .unwrap();
+        serde_json::from_str(r#"[{"enabled":true,"filter":{"kind":"gain","gainDb":-6}}]"#).unwrap();
     let encode = || {
         encode_video(
             audio_path,
