@@ -1436,7 +1436,6 @@ fn rejects_wrong_streams_disguised_formats_and_recovers() {
     assert!((info.duration_seconds - 1.2).abs() < 0.2);
 }
 
-
 // An explicitly unsupported choice must still produce a valid MP4 on CPU,
 // even on CI hosts without physical GPU access.
 #[test]

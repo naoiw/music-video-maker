@@ -388,8 +388,11 @@ pub(crate) fn encode_video(
     } else {
         (0.0, 1.0)
     };
-    let (duration_seconds, actual_encoder, fallback_reason) =
-        encoder::with_fallback(selected, reason, job, |encoder, fallback| {
+    let (duration_seconds, actual_encoder, fallback_reason) = encoder::with_fallback(
+        selected,
+        reason,
+        job,
+        |encoder, fallback| {
             job.begin_encoding_attempt(encoder, fallback, progress.0)?;
             // Discard partial hardware output before a CPU retry.
             if fallback {
@@ -402,7 +405,10 @@ pub(crate) fn encode_video(
                 visual_path,
                 source,
                 temp_path,
-                OutputSettings { encoder, ..settings },
+                OutputSettings {
+                    encoder,
+                    ..settings
+                },
                 timing,
                 &prepared_overlays,
             );
@@ -433,7 +439,8 @@ pub(crate) fn encode_video(
                 ));
             }
             Ok(duration_seconds)
-        })?;
+        },
+    )?;
     let size_bytes = std::fs::metadata(temp_path)
         .map_err(|error| {
             crate::errors::io_error("出力ファイルを確認できません", &error, "OUTPUT_IO")

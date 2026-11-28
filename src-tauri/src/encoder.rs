@@ -58,11 +58,7 @@ impl Encoder {
         };
         options.extend([
             "-pix_fmt",
-            if self == Self::Qsv {
-                "nv12"
-            } else {
-                "yuv420p"
-            },
+            if self == Self::Qsv { "nv12" } else { "yuv420p" },
         ]);
         args.extend(options.into_iter().map(str::to_owned));
         if self == Self::Videotoolbox {
@@ -103,7 +99,11 @@ pub(crate) struct EncoderCapability {
     reason: Option<String>,
 }
 
-pub(crate) fn probe(encoder: Encoder, spec: ProbeSpec, job: Option<&EncodeJob>) -> Result<(), String> {
+pub(crate) fn probe(
+    encoder: Encoder,
+    spec: ProbeSpec,
+    job: Option<&EncodeJob>,
+) -> Result<(), String> {
     if let Some(job) = job {
         job.check_cancelled()?;
     }
@@ -310,14 +310,18 @@ mod tests {
             (Encoder::Cpu, None)
         );
         assert_eq!(
-            choose(Encoder::Auto, list, |_| Err(crate::encode_job::CANCELLED.into()))
-                .unwrap_err(),
+            choose(Encoder::Auto, list, |_| Err(
+                crate::encode_job::CANCELLED.into()
+            ))
+            .unwrap_err(),
             crate::encode_job::CANCELLED
         );
-        assert!(choose(Encoder::Amf, candidates("macos"), |_| panic!("unsupported"))
-            .unwrap()
-            .1
-            .is_some());
+        assert!(
+            choose(Encoder::Amf, candidates("macos"), |_| panic!("unsupported"))
+                .unwrap()
+                .1
+                .is_some()
+        );
     }
 
     #[test]
@@ -330,7 +334,9 @@ mod tests {
             Encoder::Videotoolbox,
         ] {
             let args = encoder.args(20, 60);
-            assert!(args.windows(2).any(|pair| pair == ["-c:v", encoder.codec()]));
+            assert!(args
+                .windows(2)
+                .any(|pair| pair == ["-c:v", encoder.codec()]));
             assert_eq!(
                 args.iter().any(|arg| arg == "-crf"),
                 encoder == Encoder::Cpu
@@ -351,7 +357,9 @@ mod tests {
         assert!(retryable(
             "[MVM:PERMISSION] Error while opening encoder: Operation not permitted"
         ));
-        assert!(!retryable("[MVM:PERMISSION] Permission denied opening input"));
+        assert!(!retryable(
+            "[MVM:PERMISSION] Permission denied opening input"
+        ));
         assert!(!retryable("[MVM:DISK_FULL] No space left on device"));
     }
 
