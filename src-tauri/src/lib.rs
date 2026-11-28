@@ -1,4 +1,5 @@
 mod audio;
+mod audio_analysis;
 mod audio_filters;
 mod audio_preview;
 mod encode_job;
@@ -81,6 +82,16 @@ fn compile_audio_filters(
     sample_rate: u32,
 ) -> Result<Option<String>, String> {
     audio_filters::compile(&filters, sample_rate).map_err(|error| errors::tagged("FILTER", error))
+}
+
+#[tauri::command]
+async fn analyze_audio(
+    path: String,
+    filters: Vec<audio_filters::FilterEntry>,
+) -> Result<audio_analysis::Comparison, String> {
+    tauri::async_runtime::spawn_blocking(move || audio_analysis::analyze(&path, &filters))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -194,6 +205,7 @@ pub fn run() {
             probe_audio,
             compile_audio_filters,
             render_audio_preview,
+            analyze_audio,
             load_visual,
             render_blurred_preview,
             encode_video,
