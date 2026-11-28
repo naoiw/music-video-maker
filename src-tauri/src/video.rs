@@ -279,10 +279,8 @@ pub(crate) fn encode_video(
         prepared_overlays.push((layer, VisualKind::from_format(info.format)?));
     }
     // Static sources use the same precomposed PNG as their preview. Animated
-    // GIFs bypass this step so both layers can retain every source frame.
-    let composed = if matches!(settings.fit, ImageFit::Blurred)
-        && !source.is_animated()
-    {
+    // sources bypass this step so both layers can retain every source frame.
+    let composed = if matches!(settings.fit, ImageFit::Blurred) && !source.is_animated() {
         let canvas = visual::blurred_image(&image, settings.width, settings.height)?;
         let directory = tempfile::Builder::new()
             .prefix(".music-video-maker-image-")

@@ -16,7 +16,7 @@ impl VisualKind {
         matches!(self, Self::Gif | Self::Video)
     }
 
-    fn stream(self) -> &\'static str {
+    fn stream(self) -> &'static str {
         if matches!(self, Self::Video) {
             "V:0"
         } else {
@@ -30,7 +30,7 @@ impl VisualKind {
             "JPEG" => Ok(Self::Jpeg),
             "GIF" => Ok(Self::Gif),
             "WebP" => Ok(Self::WebP),
-            "MP4" | "WebM" => Ok(Self::Video),
+            "MP4" | "WebM" | "MOV" | "MKV" => Ok(Self::Video),
             _ => Err(crate::errors::tagged(
                 "INPUT_IMAGE",
                 "非対応の画像形式です。",

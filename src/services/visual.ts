@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 export interface VisualSource {
   path: string;
   name: string;
-  format: "PNG" | "JPEG" | "GIF" | "WebP" | "MP4" | "WebM";
+  format: "PNG" | "JPEG" | "GIF" | "WebP" | "MP4" | "WebM" | "MOV" | "MKV";
   width: number;
   height: number;
   sizeBytes: number;
@@ -26,7 +26,7 @@ export async function selectVisual(): Promise<VisualSelection | null> {
     title: "映像素材を選択",
     multiple: false,
     directory: false,
-    filters: [{ name: "映像素材", extensions: ["png", "jpg", "jpeg", "gif", "webp", "mp4", "webm"] }],
+    filters: [{ name: "映像素材", extensions: ["png", "jpg", "jpeg", "gif", "webp", "mp4", "webm", "mov", "mkv"] }],
   });
   if (path === null) return null;
   if (typeof path !== "string") throw new Error("映像素材を1ファイル選択してください。");

@@ -51,7 +51,10 @@ fn extension(path: &Path) -> Option<String> {
 }
 
 fn supported_extension(ext: &str) -> bool {
-    matches!(ext, "mp3" | "wav" | "flac" | "aac" | "m4a" | "mp4" | "webm")
+    matches!(
+        ext,
+        "mp3" | "wav" | "flac" | "aac" | "m4a" | "mp4" | "webm" | "mov" | "mkv"
+    )
 }
 
 fn matches_format(ext: &str, format: &str, codec: &str) -> bool {
@@ -62,7 +65,13 @@ fn matches_format(ext: &str, format: &str, codec: &str) -> bool {
         "flac" => has("flac") && codec == "flac",
         "aac" => has("aac") && codec == "aac",
         "m4a" => has("mov") && matches!(codec, "aac" | "alac"),
-        "mp4" => has("mov") && matches!(codec, "aac" | "alac" | "mp3" | "opus" | "flac"),
+        "mp4" | "mov" => {
+            has("mov") && matches!(codec, "aac" | "alac" | "mp3" | "opus" | "flac")
+        }
+        "mkv" => {
+            has("matroska")
+                && matches!(codec, "aac" | "flac" | "mp3" | "opus" | "vorbis" | "alac")
+        }
         "webm" => has("webm") && matches!(codec, "opus" | "vorbis"),
         _ => false,
     }
@@ -231,6 +240,8 @@ mod tests {
             ("m4a", "mov,mp4,m4a,3gp,3g2,mj2", "aac"),
             ("mp4", "mov,mp4,m4a,3gp,3g2,mj2", "aac"),
             ("webm", "matroska,webm", "opus"),
+            ("mov", "mov,mp4,m4a,3gp,3g2,mj2", "aac"),
+            ("mkv", "matroska,webm", "aac"),
         ] {
             assert!(matches_format(ext, format, codec));
             assert!(!matches_format("mp3", format, codec));

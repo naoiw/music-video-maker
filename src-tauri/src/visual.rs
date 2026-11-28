@@ -96,8 +96,8 @@ fn load_source(path: &str, preview: bool) -> Result<VisualInfo, String> {
         .map(str::to_ascii_lowercase)
         .unwrap_or_default();
     match ext.as_str() {
-        "mp4" | "webm" => load_video(path, &ext, preview),
-        "webp" => load_webp(path, preview),
+        "mp4" | "webm" | "mov" | "mkv" => load_video(path, &ext, preview),
+        "webp" => load_webp(path),
         _ => load_visual_inner(path),
     }
 }
@@ -125,9 +125,9 @@ fn local_metadata(path: &str, limit: u64) -> Result<(String, u64), String> {
     if !input.is_absolute() {
         return Err("ローカルの映像素材を指定してください。".into());
     }
-    let metadata = input.metadata().map_err(|error| {
-        errors::io_error("映像素材を開けません", &error, "INPUT_IMAGE")
-    })?;
+    let metadata = input
+        .metadata()
+        .map_err(|error| errors::io_error("映像素材を開けません", &error, "INPUT_IMAGE"))?;
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > limit {
         return Err("空・無効または容量上限を超える映像素材です。".into());
     }
@@ -176,19 +176,61 @@ fn load_video(path: &str, ext: &str, preview: bool) -> Result<VisualInfo, String
     let stream = validate_stream(&probe)?;
     let has = |name| probe.format.format_name.split(',').any(|part| part == name);
     let format = match ext {
-        "mp4" if has("mov") && matches!(stream.codec_name.as_str(), "h264" | "hevc" | "av1" | "mpeg4") => "MP4",
-        "webm" if has("webm") && matches!(stream.codec_name.as_str(), "vp8" | "vp9" | "av1") => "WebM",
+        "mp4" | "mov"
+            if has("mov")
+                && matches!(
+                    stream.codec_name.as_str(),
+                    "h264" | "hevc" | "av1" | "mpeg4"
+                ) =>
+        {
+            if ext == "mov" {
+                "MOV"
+            } else {
+                "MP4"
+            }
+        }
+        "webm" if has("webm") && matches!(stream.codec_name.as_str(), "vp8" | "vp9" | "av1") => {
+            "WebM"
+        }
+        "mkv"
+            if has("matroska")
+                && matches!(
+                    stream.codec_name.as_str(),
+                    "h264" | "hevc" | "av1" | "vp8" | "vp9" | "mpeg4"
+                ) =>
+        {
+            "MKV"
+        }
         _ => return Err("非対応の動画形式またはコーデックです。".into()),
     };
     // Use a short, silent, looping GIF proxy instead of exposing local paths
     // or transferring the entire video through IPC. Export uses the original.
     let preview_base64 = if preview {
         let output = Tool::Ffmpeg.run(&[
-            "-v", "error", "-nostdin", "-xerror",
-            "-protocol_whitelist", "file", "-format_whitelist", VIDEO_FORMATS,
-            "-i", path, "-map", "0:V:0", "-an", "-sn", "-dn", "-t", "8",
-            "-vf", "fps=10,scale=360:360:force_original_aspect_ratio=decrease",
-            "-loop", "0", "-f", "gif", "-",
+            "-v",
+            "error",
+            "-nostdin",
+            "-xerror",
+            "-protocol_whitelist",
+            "file",
+            "-format_whitelist",
+            VIDEO_FORMATS,
+            "-i",
+            path,
+            "-map",
+            "0:V:0",
+            "-an",
+            "-sn",
+            "-dn",
+            "-t",
+            "8",
+            "-vf",
+            "fps=10,scale=360:360:force_original_aspect_ratio=decrease",
+            "-loop",
+            "0",
+            "-f",
+            "gif",
+            "-",
         ])?;
         if output.stdout.is_empty() || output.stdout.len() > MAX_IMAGE_BYTES {
             return Err("映像プレビューの容量が無効です。".into());
@@ -229,7 +271,7 @@ fn is_animated_webp(bytes: &[u8]) -> bool {
     false
 }
 
-fn load_webp(path: &str, _preview: bool) -> Result<VisualInfo, String> {
+fn load_webp(path: &str) -> Result<VisualInfo, String> {
     let (name, size_bytes) = local_metadata(path, MAX_IMAGE_BYTES as u64)?;
     let mut bytes = Vec::new();
     File::open(path)
@@ -254,9 +296,25 @@ fn load_webp(path: &str, _preview: bool) -> Result<VisualInfo, String> {
     // Always decode a frame, including during export validation.
     // Reuse PNG for the static blurred preview/composition without new crates.
     let output = Tool::Ffmpeg.run(&[
-        "-v", "error", "-nostdin", "-xerror", "-protocol_whitelist", "file",
-        "-format_whitelist", "webp_pipe", "-i", path, "-map", "0:v:0",
-        "-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "-",
+        "-v",
+        "error",
+        "-nostdin",
+        "-xerror",
+        "-protocol_whitelist",
+        "file",
+        "-format_whitelist",
+        "webp_pipe",
+        "-i",
+        path,
+        "-map",
+        "0:v:0",
+        "-frames:v",
+        "1",
+        "-c:v",
+        "png",
+        "-f",
+        "image2pipe",
+        "-",
     ])?;
     let decoded = inspect_image(name, ImageFormat::Png, &output.stdout)?;
     Ok(VisualInfo {

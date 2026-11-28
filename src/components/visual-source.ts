@@ -66,7 +66,7 @@ export function refreshVisualPreview(settings: OutputSettings): void {
     if (preview.firstElementChild !== originalImage) preview.replaceChildren(originalImage);
     return;
   }
-  if (["GIF", "MP4", "WebM"].includes(selectedVisual.format)) {
+  if (["GIF", "MP4", "WebM", "MOV", "MKV"].includes(selectedVisual.format)) {
     pending = null;
     preview.replaceChildren(animatedBlurredPreview(originalImage, selectedVisual, settings));
     return;

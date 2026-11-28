@@ -35,7 +35,7 @@ export async function initializeSourceDrop(
   async function accept(paths: readonly string[], zone: HTMLElement | null): Promise<void> {
     try {
       const target = zone?.dataset.dropTarget;
-      if (!isDropTarget(target)) throw new Error("音声・ベース画像・追加レイヤーのエリアにドロップしてください。");
+      if (!isDropTarget(target)) throw new Error("音声・ベース映像素材・追加レイヤーのエリアにドロップしてください。");
       const loader = loaders[target];
       const button = zone?.querySelector("button");
       if (loading || !loader || !button || button.matches(":disabled")) {
